@@ -1,6 +1,8 @@
-# semantic-search-mcp
+# Semantic Search MCP
 
-MCP server for semantic search over Obsidian vaults (or any markdown collection).
+MCP server for semantic search over markdown files.
+
+Works with any collection of markdown files, including [Obsidian](https://obsidian.md/) vaults, documentation folders, or personal knowledge bases.
 
 Uses sentence-transformers for embeddings and FAISS for vector search.
 
@@ -10,6 +12,7 @@ Uses sentence-transformers for embeddings and FAISS for vector search.
 - Duplicate/similar note detection
 - Auto-updates index on file changes
 - Works as MCP server or standalone CLI
+- Compatible with Obsidian vaults and any markdown directory
 
 ## Installation
 
@@ -27,19 +30,19 @@ uvx --from . semantic-search-mcp serve
 
 ## Usage
 
-Set `VAULT_PATH` environment variable to your vault location.
+Set `CONTENT_PATH` environment variable to your content directory.
 
 ### CLI
 
 ```bash
 # Search for related notes
-VAULT_PATH=/path/to/vault semantic-search-mcp search trading strategy
+CONTENT_PATH=/path/to/content semantic-search-mcp search trading strategy
 
 # Find duplicates of a file
-VAULT_PATH=/path/to/vault semantic-search-mcp duplicates "path/to/note.md"
+CONTENT_PATH=/path/to/content semantic-search-mcp duplicates "path/to/note.md"
 
 # Start MCP server
-VAULT_PATH=/path/to/vault semantic-search-mcp serve
+CONTENT_PATH=/path/to/content semantic-search-mcp serve
 ```
 
 ### MCP Configuration
@@ -59,7 +62,7 @@ Add to your `.claude/mcp.json`:
         "serve"
       ],
       "env": {
-        "VAULT_PATH": "/path/to/your/vault"
+        "CONTENT_PATH": "/path/to/your/content"
       }
     }
   }
@@ -89,14 +92,14 @@ For local development, use `--reinstall` to pick up changes:
 
 ## Index Storage
 
-The vector index is stored in `.semantic-search/` inside your vault:
+The vector index is stored in `.semantic-search/` inside your content directory:
 
 ```
-vault/
+content/
 ├── .semantic-search/
 │   ├── vector_index.faiss
 │   └── index_meta.json
-└── ... your notes
+└── ... your markdown files
 ```
 
 First run downloads the embedding model (~90MB) and indexes all markdown files.
@@ -105,7 +108,7 @@ First run downloads the embedding model (~90MB) and indexes all markdown files.
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `VAULT_PATH` | `./vault` | Path to markdown vault |
+| `CONTENT_PATH` | `./content` | Path to markdown content directory |
 
 ## Dependencies
 
