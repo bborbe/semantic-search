@@ -90,6 +90,23 @@ For local development, use `--reinstall` to pick up changes:
 | `search_related(query, top_k=5)` | Search for semantically related notes |
 | `check_duplicates(file_path)` | Find potential duplicate notes |
 
+## Claude Instructions
+
+Add to your `CLAUDE.md`:
+
+```markdown
+## Semantic Search MCP
+
+Use proactively:
+- `search_related(query, top_k=5)` - Find notes on a topic
+- `check_duplicates(file_path)` - Check before creating new notes
+
+Triggers:
+- "do I have notes about..." → search_related
+- "find similar..." → search_related
+- Creating new note → check_duplicates first
+```
+
 ## Index Storage
 
 The vector index is stored in `.semantic-search/` inside your content directory:
