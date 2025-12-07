@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semantic-search-mcp"
+version = "0.1.0"
+description = "MCP server for semantic search in Obsidian vaults"
+authors = [
+    { name="Benjamin Borbe", email="bborbe@rocketnews.de" }
+]
+dependencies = [
+    "fastmcp",
+    "sentence-transformers",
+    "faiss-cpu",
+    "watchdog",
+    "numpy"
+]
+
+[project.scripts]
+semantic-search-mcp = "semantic_search_mcp.__main__:main"
+
