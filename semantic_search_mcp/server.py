@@ -7,7 +7,7 @@ from fastmcp import FastMCP
 from .indexer import VaultIndexer, VaultWatcher
 
 # Configuration from environment
-VAULT_PATH = os.environ.get("VAULT_PATH", "./vault")
+CONTENT_PATH = os.environ.get("CONTENT_PATH", "./content")
 
 # MCP server instance
 mcp = FastMCP("semantic-search-mcp")
@@ -21,7 +21,7 @@ def get_indexer() -> VaultIndexer:
     """Get or create the indexer instance."""
     global _indexer, _watcher
     if _indexer is None:
-        _indexer = VaultIndexer(VAULT_PATH)
+        _indexer = VaultIndexer(CONTENT_PATH)
         _watcher = VaultWatcher(_indexer)
         _watcher.start(background=True)
     return _indexer
@@ -47,7 +47,7 @@ def check_duplicates(file_path: str) -> list[dict]:
     """Find notes that are potential duplicates of the given file.
 
     Args:
-        file_path: Path to the file (absolute or relative to vault)
+        file_path: Path to the file (absolute or relative to content directory)
 
     Returns:
         List of similar notes with path and similarity score
