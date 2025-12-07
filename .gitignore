@@ -36,3 +36,4 @@ ENV/
 # Claude Code
 .claude/
 CLAUDE.md
+.mcp.json

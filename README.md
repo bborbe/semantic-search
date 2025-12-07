@@ -113,3 +113,7 @@ First run downloads the embedding model (~90MB) and indexes all markdown files.
 - [faiss-cpu](https://github.com/facebookresearch/faiss) - Vector similarity search
 - [fastmcp](https://github.com/jlowin/fastmcp) - MCP server framework
 - [watchdog](https://github.com/gorakhargosh/watchdog) - File system monitoring
+
+## License
+
+This project is licensed under the BSD 2-Clause License - see the [LICENSE](LICENSE) file for details.
