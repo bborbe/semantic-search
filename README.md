@@ -8,25 +8,18 @@ From GitHub:
 ```bash
 claude mcp remove -s project semantic-search
 claude mcp add -s project semantic-search \
-  --command uvx \
-  --arg "--from" \
-  --arg "git+https://github.com/bborbe/semantic-search-mcp" \
-  --arg "semantic-search-mcp" \
-  --arg "serve" \
-  --env CONTENT_PATH=/path/to/your/content
+--env CONTENT_PATH=/path/to/your/content \
+-- \
+uvx --from git+https://github.com/bborbe/semantic-search-mcp semantic-search-mcp serve
 ```
 
 Local development:
 ```bash
 claude mcp remove -s project semantic-search
 claude mcp add -s project semantic-search \
-  --command uvx \
-  --arg "--reinstall" \
-  --arg "--from" \
-  --arg "/path/to/semantic-search-mcp" \
-  --arg "semantic-search-mcp" \
-  --arg "serve" \
-  --env CONTENT_PATH=/path/to/your/content
+--env CONTENT_PATH=/path/to/your/content \
+-- \
+uvx --reinstall --from /path/to/semantic-search-mcp semantic-search-mcp serve
 ```
 
 Replace `/path/to/your/content` with your markdown directory (e.g., Obsidian vault path).
