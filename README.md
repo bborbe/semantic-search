@@ -1,138 +1,51 @@
 # Semantic Search MCP
 
-MCP server for semantic search over markdown files.
-
-Works with any collection of markdown files, including [Obsidian](https://obsidian.md/) vaults, documentation folders, or personal knowledge bases.
-
-Uses sentence-transformers for embeddings and FAISS for vector search.
-
-## Features
-
-- Semantic search across markdown files
-- Duplicate/similar note detection
-- Auto-updates index on file changes
-- Works as MCP server or standalone CLI
-- Compatible with Obsidian vaults and any markdown directory
+MCP server that adds semantic search over markdown files to Claude Code. Find related notes by meaning, not just keywords. Detect duplicates before creating new notes.
 
 ## Installation
 
-Requires Python 3.10+.
-
+From GitHub:
 ```bash
-# Via uvx (recommended)
-uvx --from git+https://github.com/bborbe/semantic-search-mcp semantic-search-mcp serve
-
-# Or clone and run locally
-git clone https://github.com/bborbe/semantic-search-mcp
-cd semantic-search-mcp
-uvx --from . semantic-search-mcp serve
+claude mcp remove -s project semantic-search
+claude mcp add -s project semantic-search \
+  --command uvx \
+  --arg "--from" \
+  --arg "git+https://github.com/bborbe/semantic-search-mcp" \
+  --arg "semantic-search-mcp" \
+  --arg "serve" \
+  --env CONTENT_PATH=/path/to/your/content
 ```
+
+Local development:
+```bash
+claude mcp remove -s project semantic-search
+claude mcp add -s project semantic-search \
+  --command uvx \
+  --arg "--reinstall" \
+  --arg "--from" \
+  --arg "/path/to/semantic-search-mcp" \
+  --arg "semantic-search-mcp" \
+  --arg "serve" \
+  --env CONTENT_PATH=/path/to/your/content
+```
+
+Replace `/path/to/your/content` with your markdown directory (e.g., Obsidian vault path).
 
 ## Usage
 
-Set `CONTENT_PATH` environment variable to your content directory.
+Ask Claude:
+- "Do I have notes about X?" → searches related notes
+- "Find similar notes to Y" → finds semantically related content
+- Before creating new notes → Claude checks for duplicates automatically
 
-### CLI
+## Tools
 
-```bash
-# Search for related notes
-CONTENT_PATH=/path/to/content semantic-search-mcp search trading strategy
+- `search_related(query, top_k=5)` - Find semantically related notes
+- `check_duplicates(file_path)` - Detect duplicate/similar notes
 
-# Find duplicates of a file
-CONTENT_PATH=/path/to/content semantic-search-mcp duplicates "path/to/note.md"
+## How It Works
 
-# Start MCP server
-CONTENT_PATH=/path/to/content semantic-search-mcp serve
-```
-
-### MCP Configuration
-
-Add to your `.claude/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "semantic-search": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/bborbe/semantic-search-mcp",
-        "semantic-search-mcp",
-        "serve"
-      ],
-      "env": {
-        "CONTENT_PATH": "/path/to/your/content"
-      }
-    }
-  }
-}
-```
-
-For local development, use `--reinstall` to pick up changes:
-
-```json
-{
-  "args": [
-    "--reinstall",
-    "--from",
-    "/path/to/semantic-search-mcp",
-    "semantic-search-mcp",
-    "serve"
-  ]
-}
-```
-
-## MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `search_related(query, top_k=5)` | Search for semantically related notes |
-| `check_duplicates(file_path)` | Find potential duplicate notes |
-
-## Claude Instructions
-
-Add to your `CLAUDE.md`:
-
-```markdown
-## Semantic Search MCP
-
-Use proactively:
-- `search_related(query, top_k=5)` - Find notes on a topic
-- `check_duplicates(file_path)` - Check before creating new notes
-
-Triggers:
-- "do I have notes about..." → search_related
-- "find similar..." → search_related
-- Creating new note → check_duplicates first
-```
-
-## Index Storage
-
-The vector index is stored in `.semantic-search/` inside your content directory:
-
-```
-content/
-├── .semantic-search/
-│   ├── vector_index.faiss
-│   └── index_meta.json
-└── ... your markdown files
-```
-
-First run downloads the embedding model (~90MB) and indexes all markdown files.
-
-## Configuration
-
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `CONTENT_PATH` | `./content` | Path to markdown content directory |
-
-## Dependencies
-
-- [sentence-transformers](https://www.sbert.net/) - Text embeddings (model: all-MiniLM-L6-v2)
-- [faiss-cpu](https://github.com/facebookresearch/faiss) - Vector similarity search
-- [fastmcp](https://github.com/jlowin/fastmcp) - MCP server framework
-- [watchdog](https://github.com/gorakhargosh/watchdog) - File system monitoring
+First run downloads a small embedding model (~90MB) and indexes your markdown files (<1s for typical vaults). Each Claude Code session gets its own index in `/tmp/` that auto-updates when files change. Multiple sessions work independently without conflicts.
 
 ## License
 
