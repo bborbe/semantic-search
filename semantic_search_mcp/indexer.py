@@ -1,7 +1,9 @@
 """Core indexer for semantic search over markdown files."""
 
+import hashlib
 import json
 from pathlib import Path
+import tempfile
 from threading import Thread
 import time
 
@@ -10,6 +12,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import os
 
 
 class VaultIndexer:
@@ -21,8 +24,9 @@ class VaultIndexer:
         self.embedding_model = embedding_model
         self.duplicate_threshold = duplicate_threshold
 
-        # Store index in vault's .semantic-search directory
-        self.index_dir = self.vault_path / ".semantic-search"
+        # Store index in OS temp directory with content hash and PID
+        content_hash = hashlib.md5(str(self.vault_path.resolve()).encode()).hexdigest()[:8]
+        self.index_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash / str(os.getpid())
         self.index_file = self.index_dir / "vector_index.faiss"
         self.meta_file = self.index_dir / "index_meta.json"
 
