@@ -11,12 +11,72 @@ on:
     types: [submitted]
 
 jobs:
+  # Check if user is authorized to trigger Claude
+  check-auth:
+    runs-on: ubuntu-latest
+    outputs:
+      authorized: ${{ steps.auth.outputs.authorized }}
+      has-trigger: ${{ steps.trigger.outputs.has-trigger }}
+    steps:
+      - name: Check authorization
+        id: auth
+        run: |
+          if [[ "${{ github.actor }}" == "bborbe" ]]; then
+            echo "authorized=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          case "${{ github.event_name }}" in
+            "pull_request_review_comment"|"pull_request_review")
+              association="${{ github.event.pull_request.author_association }}"
+              ;;
+            "issue_comment"|"issues")
+              association="${{ github.event.issue.author_association }}"
+              ;;
+            *)
+              association=""
+              ;;
+          esac
+
+          if [[ "$association" == "COLLABORATOR" || "$association" == "MEMBER" || "$association" == "OWNER" ]]; then
+            echo "authorized=true" >> $GITHUB_OUTPUT
+          else
+            echo "authorized=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check trigger phrase
+        id: trigger
+        run: |
+          case "${{ github.event_name }}" in
+            "issue_comment"|"pull_request_review_comment")
+              if [[ "${{ contains(github.event.comment.body, '@claude') }}" == "true" ]]; then
+                echo "has-trigger=true" >> $GITHUB_OUTPUT
+              else
+                echo "has-trigger=false" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            "pull_request_review")
+              if [[ "${{ contains(github.event.review.body, '@claude') }}" == "true" ]]; then
+                echo "has-trigger=true" >> $GITHUB_OUTPUT
+              else
+                echo "has-trigger=false" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            "issues")
+              if [[ "${{ contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude') }}" == "true" ]]; then
+                echo "has-trigger=true" >> $GITHUB_OUTPUT
+              else
+                echo "has-trigger=false" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            *)
+              echo "has-trigger=false" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
   claude:
-    if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    needs: check-auth
+    if: needs.check-auth.outputs.authorized == 'true' && needs.check-auth.outputs.has-trigger == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

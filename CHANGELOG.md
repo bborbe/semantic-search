@@ -8,6 +8,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.1.1
+
+- Add authorization restrictions to GitHub Actions workflows
+- Restrict @claude trigger to bborbe and trusted collaborators only
+
 ## v0.1.0
 
 - Add semantic search over markdown files using sentence-transformers
