@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import os
+import yaml
 
 
 class VaultIndexer:
@@ -69,6 +70,84 @@ class VaultIndexer:
         print(f"[WARN] Could not decode {file_path} with any encoding")
         return None
 
+    def _prepare_text_for_embedding(self, file_path: Path, content: str) -> str:
+        """Prepare weighted text for embedding by repeating important components.
+
+        Components and weights:
+        - Filename (no extension, separators → spaces): 3x
+        - Metadata title: 3x
+        - Metadata tags/aliases: 2x
+        - First H1 heading: 2x
+        - Body (first 500 words, frontmatter removed): 1x
+        """
+        parts = []
+
+        # 1. Filename processing (3x)
+        filename = file_path.stem  # Remove .md extension
+        filename_text = filename.replace("-", " ").replace("_", " ")
+        parts.extend([filename_text] * 3)
+
+        # 2. Extract frontmatter and parse YAML metadata
+        frontmatter_data = {}
+        content_without_frontmatter = content
+
+        if content.startswith("---"):
+            try:
+                # Find the second --- marker
+                end_marker = content.find("---", 3)
+                if end_marker != -1:
+                    frontmatter_text = content[3:end_marker].strip()
+                    content_without_frontmatter = content[end_marker + 3:].strip()
+
+                    # Parse YAML frontmatter
+                    frontmatter_data = yaml.safe_load(frontmatter_text) or {}
+            except yaml.YAMLError as e:
+                print(f"[WARN] Failed to parse frontmatter in {file_path}: {e}")
+            except Exception as e:
+                print(f"[WARN] Error processing frontmatter in {file_path}: {e}")
+
+        # 3. Metadata title (3x)
+        if "title" in frontmatter_data and frontmatter_data["title"]:
+            title = str(frontmatter_data["title"])
+            parts.extend([title] * 3)
+
+        # 4. Metadata tags and aliases (2x)
+        tags_aliases = []
+        if "tags" in frontmatter_data and frontmatter_data["tags"]:
+            tags = frontmatter_data["tags"]
+            if isinstance(tags, list):
+                tags_aliases.extend([str(t) for t in tags])
+            else:
+                tags_aliases.append(str(tags))
+
+        if "aliases" in frontmatter_data and frontmatter_data["aliases"]:
+            aliases = frontmatter_data["aliases"]
+            if isinstance(aliases, list):
+                tags_aliases.extend([str(a) for a in aliases])
+            else:
+                tags_aliases.append(str(aliases))
+
+        if tags_aliases:
+            tags_text = " ".join(tags_aliases)
+            parts.extend([tags_text] * 2)
+
+        # 5. First H1 heading (2x)
+        for line in content_without_frontmatter.split("\n"):
+            line = line.strip()
+            if line.startswith("# "):
+                heading = line[2:].strip()
+                parts.extend([heading] * 2)
+                break
+
+        # 6. Body content (first 500 words, 1x)
+        words = content_without_frontmatter.split()
+        body_words = words[:500]
+        if body_words:
+            parts.append(" ".join(body_words))
+
+        # Join all parts with newlines for readability
+        return "\n".join(parts)
+
     def _embed_text(self, text: str) -> np.ndarray:
         """Generate embedding vector for text."""
         vec = self.model.encode([text], normalize_embeddings=True)
@@ -82,9 +161,14 @@ class VaultIndexer:
         content = self._read_file(file_path)
         if content is None:
             return
-        vec = self._embed_text(content)
+
+        # Prepare weighted text for embedding
+        weighted_text = self._prepare_text_for_embedding(file_path, content)
+        vec = self._embed_text(weighted_text)
+
         idx = len(self.meta)
         self.index.add(vec)
+        # Store original content in metadata for display
         self.meta[str(idx)] = {"path": str(file_path), "content": content}
         print(f"[INFO] Indexed {file_path}")
 
@@ -101,8 +185,13 @@ class VaultIndexer:
                 content = self._read_file(file_path)
                 if content is None:
                     continue
-                vec = self._embed_text(content)
+
+                # Prepare weighted text for embedding
+                weighted_text = self._prepare_text_for_embedding(file_path, content)
+                vec = self._embed_text(weighted_text)
+
                 self.index.add(vec)
+                # Store original content in metadata for display
                 new_meta[str(idx)] = {"path": str(file_path), "content": content}
                 idx += 1
                 if idx % 100 == 0:
@@ -142,7 +231,10 @@ class VaultIndexer:
         content = self._read_file(file_path)
         if content is None:
             return {"error": f"Could not read file: {file_path}"}
-        vec = self._embed_text(content)
+
+        # Prepare weighted text for embedding
+        weighted_text = self._prepare_text_for_embedding(file_path, content)
+        vec = self._embed_text(weighted_text)
 
         if len(self.meta) == 0:
             return []

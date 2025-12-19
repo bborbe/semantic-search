@@ -14,9 +14,13 @@ dependencies = [
     "sentence-transformers",
     "faiss-cpu",
     "watchdog",
-    "numpy"
+    "numpy",
+    "pyyaml"
 ]
 
 [project.scripts]
 semantic-search-mcp = "semantic_search_mcp.__main__:main"
+
+[tool.setuptools]
+packages = ["semantic_search_mcp"]
 
