@@ -24,6 +24,16 @@ uvx --reinstall --from /path/to/semantic-search-mcp semantic-search-mcp serve
 
 Replace `/path/to/your/content` with your markdown directory (e.g., Obsidian vault path).
 
+### Multiple Directories
+
+Index multiple directories by separating paths with commas:
+
+```bash
+--env CONTENT_PATH=/path/to/vault1,/path/to/vault2,/path/to/docs
+```
+
+All directories are indexed together and searched as one unified index.
+
 ## Usage
 
 Ask Claude:
