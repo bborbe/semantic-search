@@ -49,8 +49,9 @@ def duplicates():
     """Find duplicate notes."""
     parser = argparse.ArgumentParser(description="Find potential duplicate notes")
     parser.add_argument("file", help="File to check for duplicates (absolute or relative to vault)")
-    parser.add_argument("-t", "--threshold", type=float, default=0.85,
-                        help="Similarity threshold (default: 0.85)")
+    parser.add_argument(
+        "-t", "--threshold", type=float, default=0.85, help="Similarity threshold (default: 0.85)"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Show more details")
     args = parser.parse_args()
 

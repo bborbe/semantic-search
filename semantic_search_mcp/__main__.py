@@ -14,12 +14,15 @@ def main():
 
     if cmd == "serve":
         from .server import run
+
         run()
     elif cmd == "search":
         from .cli import search
+
         search()
     elif cmd == "duplicates":
         from .cli import duplicates
+
         duplicates()
     else:
         _print_usage()

@@ -2,25 +2,29 @@
 
 import hashlib
 import json
-from pathlib import Path
+import os
 import tempfile
-from threading import Thread
 import time
+from pathlib import Path
+from threading import Thread
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-import os
 import yaml
+from sentence_transformers import SentenceTransformer
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 
 class VaultIndexer:
     """Indexes markdown files and provides semantic search."""
 
-    def __init__(self, vault_paths: str | list[str], embedding_model: str = "all-MiniLM-L6-v2",
-                 duplicate_threshold: float = 0.85):
+    def __init__(
+        self,
+        vault_paths: str | list[str],
+        embedding_model: str = "all-MiniLM-L6-v2",
+        duplicate_threshold: float = 0.85,
+    ):
         # Support both single path (str) and multiple paths (list)
         if isinstance(vault_paths, str):
             vault_paths = [vault_paths]
@@ -31,7 +35,9 @@ class VaultIndexer:
         # Store index in OS temp directory with content hash and PID
         paths_str = ",".join(str(p.resolve()) for p in self.vault_paths)
         content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
-        self.index_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash / str(os.getpid())
+        self.index_dir = (
+            Path(tempfile.gettempdir()) / "semantic-search" / content_hash / str(os.getpid())
+        )
         self.index_file = self.index_dir / "vector_index.faiss"
         self.meta_file = self.index_dir / "index_meta.json"
 
@@ -46,7 +52,7 @@ class VaultIndexer:
 
         if self.index_file.exists() and self.meta_file.exists():
             self.index = faiss.read_index(str(self.index_file))
-            with open(self.meta_file, "r") as f:
+            with open(self.meta_file) as f:
                 self.meta = json.load(f)
             print(f"[INFO] Loaded index with {len(self.meta)} entries.")
         else:
@@ -67,7 +73,7 @@ class VaultIndexer:
         encodings = ["utf-8", "latin-1", "cp1252"]
         for encoding in encodings:
             try:
-                with open(file_path, "r", encoding=encoding) as f:
+                with open(file_path, encoding=encoding) as f:
                     return f.read()
             except UnicodeDecodeError:
                 continue
@@ -101,7 +107,7 @@ class VaultIndexer:
                 end_marker = content.find("---", 3)
                 if end_marker != -1:
                     frontmatter_text = content[3:end_marker].strip()
-                    content_without_frontmatter = content[end_marker + 3:].strip()
+                    content_without_frontmatter = content[end_marker + 3 :].strip()
 
                     # Parse YAML frontmatter
                     frontmatter_data = yaml.safe_load(frontmatter_text) or {}
@@ -214,14 +220,11 @@ class VaultIndexer:
 
         vec = self._embed_text(query)
         k = min(top_k, len(self.meta))
-        D, I = self.index.search(vec, k)
+        distances, indices = self.index.search(vec, k)
         results = []
-        for score, idx in zip(D[0], I[0]):
+        for score, idx in zip(distances[0], indices[0], strict=True):
             if str(idx) in self.meta:
-                results.append({
-                    "path": self.meta[str(idx)]["path"],
-                    "score": float(score)
-                })
+                results.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
         return results
 
     def find_duplicates(self, file_path: str) -> list[dict]:
@@ -249,16 +252,13 @@ class VaultIndexer:
         if len(self.meta) == 0:
             return []
 
-        D, I = self.index.search(vec, len(self.meta))
+        distances, indices = self.index.search(vec, len(self.meta))
         duplicates = []
-        for score, idx in zip(D[0], I[0]):
+        for score, idx in zip(distances[0], indices[0], strict=True):
             if str(idx) in self.meta and score > self.duplicate_threshold:
                 # Skip the file itself
                 if Path(self.meta[str(idx)]["path"]).resolve() != file_path.resolve():
-                    duplicates.append({
-                        "path": self.meta[str(idx)]["path"],
-                        "score": float(score)
-                    })
+                    duplicates.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
         return duplicates
 
 
@@ -314,5 +314,5 @@ class _VaultEventHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         if not event.is_directory:
-            print(f"[INFO] File removed, rebuilding index...")
+            print("[INFO] File removed, rebuilding index...")
             self.indexer.rebuild_index()

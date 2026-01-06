@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.2.1
+
+- Add ruff linting and formatting to Makefile
+- Fix lint errors (ambiguous variable names, strict zip)
+- Improve pyproject.toml with ruff and mypy config
+
 ## v0.2.0
 
 - Add multi-directory support via comma-separated CONTENT_PATH

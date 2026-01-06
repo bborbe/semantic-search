@@ -1,7 +1,6 @@
 """Pytest fixtures for testing."""
 
 from pathlib import Path
-from typing import Generator
 from unittest.mock import Mock
 
 import pytest

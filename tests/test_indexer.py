@@ -1,10 +1,9 @@
 """Tests for VaultIndexer."""
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import numpy as np
-import pytest
 
 
 class TestVaultIndexerInit:
@@ -17,6 +16,7 @@ class TestVaultIndexerInit:
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
             from semantic_search_mcp.indexer import VaultIndexer
+
             indexer = VaultIndexer(str(temp_vault))
 
             assert len(indexer.vault_paths) == 1
@@ -29,14 +29,13 @@ class TestVaultIndexerInit:
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
             from semantic_search_mcp.indexer import VaultIndexer
+
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
 
             assert len(indexer.vault_paths) == 2
 
-    def test_creates_unique_index_dir_per_path_combination(
-        self, multi_vaults: list[Path]
-    ) -> None:
+    def test_creates_unique_index_dir_per_path_combination(self, multi_vaults: list[Path]) -> None:
         """Test different path combinations get different index directories."""
         with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
@@ -61,6 +60,7 @@ class TestVaultIndexerRebuild:
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
             from semantic_search_mcp.indexer import VaultIndexer
+
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
 
@@ -71,15 +71,14 @@ class TestVaultIndexerRebuild:
 class TestVaultIndexerFindDuplicates:
     """Tests for duplicate detection."""
 
-    def test_resolves_relative_path_against_all_vaults(
-        self, multi_vaults: list[Path]
-    ) -> None:
+    def test_resolves_relative_path_against_all_vaults(self, multi_vaults: list[Path]) -> None:
         """Test relative paths are checked against all vault directories."""
         with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
             from semantic_search_mcp.indexer import VaultIndexer
+
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
 
