@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.2.0
+
+- Add multi-directory support via comma-separated CONTENT_PATH
+- Add pytest test suite with 11 tests
+- Add Makefile with test target
+
 ## v0.1.1
 
 - Add authorization restrictions to GitHub Actions workflows

@@ -6,8 +6,9 @@ from fastmcp import FastMCP
 
 from .indexer import VaultIndexer, VaultWatcher
 
-# Configuration from environment
-CONTENT_PATH = os.environ.get("CONTENT_PATH", "./content")
+# Configuration from environment - supports comma-separated paths
+_raw_paths = os.environ.get("CONTENT_PATH", "./content")
+CONTENT_PATHS = [p.strip() for p in _raw_paths.split(",") if p.strip()]
 
 # MCP server instance
 mcp = FastMCP("semantic-search-mcp")
@@ -21,7 +22,7 @@ def get_indexer() -> VaultIndexer:
     """Get or create the indexer instance."""
     global _indexer, _watcher
     if _indexer is None:
-        _indexer = VaultIndexer(CONTENT_PATH)
+        _indexer = VaultIndexer(CONTENT_PATHS)
         _watcher = VaultWatcher(_indexer)
         _watcher.start(background=True)
     return _indexer

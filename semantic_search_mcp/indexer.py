@@ -19,14 +19,18 @@ import yaml
 class VaultIndexer:
     """Indexes markdown files and provides semantic search."""
 
-    def __init__(self, vault_path: str, embedding_model: str = "all-MiniLM-L6-v2",
+    def __init__(self, vault_paths: str | list[str], embedding_model: str = "all-MiniLM-L6-v2",
                  duplicate_threshold: float = 0.85):
-        self.vault_path = Path(vault_path)
+        # Support both single path (str) and multiple paths (list)
+        if isinstance(vault_paths, str):
+            vault_paths = [vault_paths]
+        self.vault_paths = [Path(p) for p in vault_paths]
         self.embedding_model = embedding_model
         self.duplicate_threshold = duplicate_threshold
 
         # Store index in OS temp directory with content hash and PID
-        content_hash = hashlib.md5(str(self.vault_path.resolve()).encode()).hexdigest()[:8]
+        paths_str = ",".join(str(p.resolve()) for p in self.vault_paths)
+        content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
         self.index_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash / str(os.getpid())
         self.index_file = self.index_dir / "vector_index.faiss"
         self.meta_file = self.index_dir / "index_meta.json"
@@ -173,31 +177,32 @@ class VaultIndexer:
         print(f"[INFO] Indexed {file_path}")
 
     def rebuild_index(self):
-        """Rebuild entire index from vault."""
+        """Rebuild entire index from all vault paths."""
         self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
         new_meta = {}
         idx = 0
-        for file_path in self.vault_path.rglob("*.md"):
-            # Skip files in .semantic-search directory
-            if ".semantic-search" in str(file_path):
-                continue
-            try:
-                content = self._read_file(file_path)
-                if content is None:
+        for vault_path in self.vault_paths:
+            for file_path in vault_path.rglob("*.md"):
+                # Skip files in .semantic-search directory
+                if ".semantic-search" in str(file_path):
                     continue
+                try:
+                    content = self._read_file(file_path)
+                    if content is None:
+                        continue
 
-                # Prepare weighted text for embedding
-                weighted_text = self._prepare_text_for_embedding(file_path, content)
-                vec = self._embed_text(weighted_text)
+                    # Prepare weighted text for embedding
+                    weighted_text = self._prepare_text_for_embedding(file_path, content)
+                    vec = self._embed_text(weighted_text)
 
-                self.index.add(vec)
-                # Store original content in metadata for display
-                new_meta[str(idx)] = {"path": str(file_path), "content": content}
-                idx += 1
-                if idx % 100 == 0:
-                    print(f"[INFO] Indexed {idx} files...")
-            except Exception as e:
-                print(f"[WARN] Failed to index {file_path}: {e}")
+                    self.index.add(vec)
+                    # Store original content in metadata for display
+                    new_meta[str(idx)] = {"path": str(file_path), "content": content}
+                    idx += 1
+                    if idx % 100 == 0:
+                        print(f"[INFO] Indexed {idx} files...")
+                except Exception as e:
+                    print(f"[WARN] Failed to index {file_path}: {e}")
         self.meta = new_meta
         self.save_index()
         print(f"[INFO] Rebuilt index with {len(self.meta)} files.")
@@ -223,7 +228,12 @@ class VaultIndexer:
         """Find potential duplicates of a file."""
         file_path = Path(file_path)
         if not file_path.is_absolute():
-            file_path = self.vault_path / file_path
+            # Try each vault path for relative paths
+            for vault_path in self.vault_paths:
+                candidate = vault_path / file_path
+                if candidate.exists():
+                    file_path = candidate
+                    break
 
         if not file_path.exists():
             return {"error": f"File not found: {file_path}"}
@@ -261,12 +271,13 @@ class VaultWatcher:
         self._thread = None
 
     def start(self, background: bool = True):
-        """Start watching the vault."""
+        """Start watching all vault paths."""
         handler = _VaultEventHandler(self.indexer)
         self._observer = Observer()
-        self._observer.schedule(handler, str(self.indexer.vault_path), recursive=True)
+        for vault_path in self.indexer.vault_paths:
+            self._observer.schedule(handler, str(vault_path), recursive=True)
+            print(f"[INFO] Watching vault at {vault_path}")
         self._observer.start()
-        print(f"[INFO] Watching vault at {self.indexer.vault_path}")
 
         if background:
             self._thread = Thread(target=self._run_loop, daemon=True)
