@@ -8,6 +8,18 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.3.0
+
+- Add comprehensive type hints throughout codebase
+- Replace print() with proper logging (info/warning/error levels)
+- Enable strict mypy type checking (disallow_untyped_defs)
+- Add types-PyYAML dependency for YAML type stubs
+- Add C4 (flake8-comprehensions) to ruff lint rules
+- Add BSD-2-Clause license to pyproject.toml
+- Add install target to Makefile
+- Include typecheck in Makefile check target
+- Rename index_file() to add_file_to_index() to avoid naming collision
+
 ## v0.2.1
 
 - Add ruff linting and formatting to Makefile

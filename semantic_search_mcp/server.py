@@ -1,10 +1,13 @@
 """MCP server for semantic search."""
 
+import logging
 import os
 
 from fastmcp import FastMCP
 
 from .indexer import VaultIndexer, VaultWatcher
+
+logger = logging.getLogger(__name__)
 
 # Configuration from environment - supports comma-separated paths
 _raw_paths = os.environ.get("CONTENT_PATH", "./content")
@@ -44,20 +47,20 @@ def search_related(query: str, top_k: int = 5) -> list[dict]:
 
 
 @mcp.tool
-def check_duplicates(file_path: str) -> list[dict]:
+def check_duplicates(file_path: str) -> list[dict] | dict[str, str]:
     """Find notes that are potential duplicates of the given file.
 
     Args:
         file_path: Path to the file (absolute or relative to content directory)
 
     Returns:
-        List of similar notes with path and similarity score
+        List of similar notes with path and similarity score, or error dict
     """
     indexer = get_indexer()
     return indexer.find_duplicates(file_path)
 
 
-def run():
+def run() -> None:
     """Run the MCP server."""
-    print("[INFO] Starting MCP server (fastmcp)")
+    logger.info("[Server] Starting MCP server (fastmcp)")
     mcp.run()

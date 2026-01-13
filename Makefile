@@ -2,6 +2,10 @@
 sync:
 	uv sync --all-extras
 
+.PHONY: install
+install:
+	uv sync --all-extras
+
 .PHONY: precommit
 precommit: format test check
 	@echo "ready to commit"
@@ -19,7 +23,7 @@ test:
 	@uv run python -m pytest tests/ -v
 
 .PHONY: check
-check: lint
+check: lint typecheck
 	@echo "✅ All checks passed"
 
 .PHONY: lint

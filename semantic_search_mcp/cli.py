@@ -17,7 +17,7 @@ def _get_content_path() -> str:
     return content_path
 
 
-def search():
+def search() -> None:
     """Search for related notes."""
     parser = argparse.ArgumentParser(description="Search for semantically related notes")
     parser.add_argument("query", nargs="+", help="Search query")
@@ -45,7 +45,7 @@ def search():
         print(f"{r['score']:.3f}  {r['path']}")
 
 
-def duplicates():
+def duplicates() -> None:
     """Find duplicate notes."""
     parser = argparse.ArgumentParser(description="Find potential duplicate notes")
     parser.add_argument("file", help="File to check for duplicates (absolute or relative to vault)")
@@ -69,6 +69,9 @@ def duplicates():
     if isinstance(results, dict) and "error" in results:
         print(f"Error: {results['error']}", file=sys.stderr)
         sys.exit(1)
+
+    # Type narrowing: results is now list[dict]
+    assert isinstance(results, list)
 
     if not results:
         print("No duplicates found.")

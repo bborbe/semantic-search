@@ -3,7 +3,7 @@
 import sys
 
 
-def main():
+def main() -> None:
     """Main entry point with subcommands."""
     if len(sys.argv) < 2:
         _print_usage()
@@ -29,7 +29,7 @@ def main():
         sys.exit(1)
 
 
-def _print_usage():
+def _print_usage() -> None:
     print("Usage: semantic-search-mcp <command> [options]")
     print()
     print("Commands:")

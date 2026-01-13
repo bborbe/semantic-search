@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 authors = [
     { name="Benjamin Borbe", email="bborbe@rocketnews.de" }
 ]
+license = { text = "BSD-2-Clause" }
 dependencies = [
     "fastmcp",
     "sentence-transformers",
@@ -25,6 +26,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "types-PyYAML",
 ]
 
 [tool.ruff]
@@ -39,14 +41,15 @@ select = [
     "F",      # pyflakes
     "I",      # isort
     "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
 ]
 
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
-check_untyped_defs = false
-disallow_untyped_defs = false
+check_untyped_defs = true
+disallow_untyped_defs = true
 
 [project.scripts]
 semantic-search-mcp = "semantic_search_mcp.__main__:main"
