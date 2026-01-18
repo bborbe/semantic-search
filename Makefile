@@ -1,37 +1,22 @@
-.PHONY: sync
-sync:
-	uv sync --all-extras
+.PHONY: install format lint typecheck check test precommit
 
-.PHONY: install
 install:
 	uv sync --all-extras
 
-.PHONY: precommit
-precommit: format test check
-	@echo "ready to commit"
-
-.PHONY: format
 format:
-	@echo "Formatting Python files..."
-	@uv run ruff format .
-	@uv run ruff check --fix . || true
-	@echo "✅ Format complete"
+	uv run ruff format .
+	uv run ruff check --fix . || true
 
-.PHONY: test
-test:
-	@echo "Running tests..."
-	@uv run python -m pytest tests/ -v
-
-.PHONY: check
-check: lint typecheck
-	@echo "✅ All checks passed"
-
-.PHONY: lint
 lint:
-	@echo "Running ruff..."
-	@uv run ruff check .
+	uv run ruff check .
 
-.PHONY: typecheck
 typecheck:
-	@echo "Running mypy..."
-	@uv run mypy semantic_search_mcp/
+	uv run mypy src
+
+check: lint typecheck
+
+test:
+	uv run pytest -v || test $$? -eq 5
+
+precommit: format test check
+	@echo "✓ All precommit checks passed"

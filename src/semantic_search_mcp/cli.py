@@ -66,13 +66,12 @@ def duplicates() -> None:
 
     results = indexer.find_duplicates(args.file)
 
-    if isinstance(results, dict) and "error" in results:
+    # Type narrowing: check error dict first
+    if not isinstance(results, list):
         print(f"Error: {results['error']}", file=sys.stderr)
         sys.exit(1)
 
-    # Type narrowing: results is now list[dict]
-    assert isinstance(results, list)
-
+    # results is now list[dict]
     if not results:
         print("No duplicates found.")
         return

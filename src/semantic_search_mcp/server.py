@@ -2,6 +2,7 @@
 
 import logging
 import os
+from threading import Lock
 
 from fastmcp import FastMCP
 
@@ -19,20 +20,22 @@ mcp = FastMCP("semantic-search-mcp")
 # Lazy initialization
 _indexer = None
 _watcher = None
+_indexer_lock = Lock()
 
 
 def get_indexer() -> VaultIndexer:
     """Get or create the indexer instance."""
     global _indexer, _watcher
-    if _indexer is None:
-        _indexer = VaultIndexer(CONTENT_PATHS)
-        _watcher = VaultWatcher(_indexer)
-        _watcher.start(background=True)
+    with _indexer_lock:
+        if _indexer is None:
+            _indexer = VaultIndexer(CONTENT_PATHS)
+            _watcher = VaultWatcher(_indexer)
+            _watcher.start(background=True)
     return _indexer
 
 
 @mcp.tool
-def search_related(query: str, top_k: int = 5) -> list[dict]:
+def search_related(query: str, top_k: int = 5) -> list[dict[str, str | float]]:
     """Search for notes semantically related to the query text.
 
     Args:
@@ -47,7 +50,7 @@ def search_related(query: str, top_k: int = 5) -> list[dict]:
 
 
 @mcp.tool
-def check_duplicates(file_path: str) -> list[dict] | dict[str, str]:
+def check_duplicates(file_path: str) -> list[dict[str, str | float]] | dict[str, str]:
     """Find notes that are potential duplicates of the given file.
 
     Args:

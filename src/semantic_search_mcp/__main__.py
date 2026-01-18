@@ -10,7 +10,7 @@ def main() -> None:
         sys.exit(1)
 
     cmd = sys.argv[1]
-    sys.argv = [sys.argv[0]] + sys.argv[2:]  # Remove subcommand from args
+    sys.argv = [sys.argv[0], *sys.argv[2:]]  # Remove subcommand from args
 
     if cmd == "serve":
         from .server import run

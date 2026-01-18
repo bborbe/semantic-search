@@ -14,8 +14,9 @@ import faiss
 import numpy as np
 import yaml
 from sentence_transformers import SentenceTransformer
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 logger = logging.getLogger(__name__)
 
@@ -121,20 +122,20 @@ class VaultIndexer:
                 logger.warning(f"[Indexer] Error processing frontmatter in {file_path}: {e}")
 
         # 3. Metadata title (3x)
-        if "title" in frontmatter_data and frontmatter_data["title"]:
+        if frontmatter_data.get("title"):
             title = str(frontmatter_data["title"])
             parts.extend([title] * 3)
 
         # 4. Metadata tags and aliases (2x)
         tags_aliases = []
-        if "tags" in frontmatter_data and frontmatter_data["tags"]:
+        if frontmatter_data.get("tags"):
             tags = frontmatter_data["tags"]
             if isinstance(tags, list):
                 tags_aliases.extend([str(t) for t in tags])
             else:
                 tags_aliases.append(str(tags))
 
-        if "aliases" in frontmatter_data and frontmatter_data["aliases"]:
+        if frontmatter_data.get("aliases"):
             aliases = frontmatter_data["aliases"]
             if isinstance(aliases, list):
                 tags_aliases.extend([str(a) for a in aliases])
@@ -217,7 +218,7 @@ class VaultIndexer:
         self.save_index()
         logger.info(f"[Indexer] Rebuilt index with {len(self.meta)} files")
 
-    def search(self, query: str, top_k: int = 5) -> list[dict]:
+    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Search for related notes."""
         if len(self.meta) == 0:
             return []
@@ -231,7 +232,7 @@ class VaultIndexer:
                 results.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
         return results
 
-    def find_duplicates(self, file_path: str | Path) -> list[dict] | dict[str, str]:
+    def find_duplicates(self, file_path: str | Path) -> list[dict[str, Any]] | dict[str, str]:
         """Find potential duplicates of a file."""
         file_path = Path(file_path) if isinstance(file_path, str) else file_path
         if not file_path.is_absolute():
@@ -259,10 +260,12 @@ class VaultIndexer:
         distances, indices = self.index.search(vec, len(self.meta))
         duplicates = []
         for score, idx in zip(distances[0], indices[0], strict=True):
-            if str(idx) in self.meta and score > self.duplicate_threshold:
-                # Skip the file itself
-                if Path(self.meta[str(idx)]["path"]).resolve() != file_path.resolve():
-                    duplicates.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
+            if (
+                str(idx) in self.meta
+                and score > self.duplicate_threshold
+                and Path(self.meta[str(idx)]["path"]).resolve() != file_path.resolve()
+            ):
+                duplicates.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
         return duplicates
 
 
@@ -271,7 +274,7 @@ class VaultWatcher:
 
     def __init__(self, indexer: VaultIndexer):
         self.indexer = indexer
-        self._observer: Any = None  # watchdog.observers.Observer
+        self._observer: BaseObserver | None = None
         self._thread: Thread | None = None
 
     def start(self, background: bool = True) -> None:
@@ -306,17 +309,17 @@ class _VaultEventHandler(FileSystemEventHandler):
     def __init__(self, indexer: VaultIndexer):
         self.indexer = indexer
 
-    def on_modified(self, event: Any) -> None:
+    def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            self.indexer.add_file_to_index(event.src_path)
+            self.indexer.add_file_to_index(str(event.src_path))
             self.indexer.save_index()
 
-    def on_created(self, event: Any) -> None:
+    def on_created(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            self.indexer.add_file_to_index(event.src_path)
+            self.indexer.add_file_to_index(str(event.src_path))
             self.indexer.save_index()
 
-    def on_deleted(self, event: Any) -> None:
+    def on_deleted(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             logger.info("[EventHandler] File removed, rebuilding index...")
             self.indexer.rebuild_index()

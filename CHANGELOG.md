@@ -8,6 +8,22 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.4.0
+
+- Migrate package to modern src/ layout (semantic_search_mcp/ → src/semantic_search_mcp/)
+- Migrate build system from setuptools to hatchling
+- Enable strict mypy mode with targeted type ignore overrides (global ignore → 2 packages)
+- Add enhanced type annotations for watchdog (replace 4 Any types with proper types)
+- Add thread safety to lazy-initialized globals in server.py
+- Add pytest async configuration for fastmcp compatibility
+- Add __version__ string to package __init__.py
+- Improve type guard pattern in cli.py (replace assert with explicit check)
+- Simplify Makefile (37 → 22 lines, remove verbose echo statements)
+- Add comprehensive ruff rules (SIM, RUF)
+- Add readme field to pyproject.toml
+- Update mypy source path to src/ directory
+- Add verbose output to pytest in Makefile
+
 ## v0.3.0
 
 - Add comprehensive type hints throughout codebase
