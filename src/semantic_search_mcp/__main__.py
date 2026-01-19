@@ -1,31 +1,54 @@
 """Entry point for the semantic search MCP server."""
 
+import logging
+import os
 import sys
+
+from .logging_setup import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     """Main entry point with subcommands."""
-    if len(sys.argv) < 2:
-        _print_usage()
+    # Configure logging from environment
+    log_level = os.environ.get("LOG_LEVEL", "INFO")
+    configure_logging(log_level)
+
+    try:
+        if len(sys.argv) < 2:
+            _print_usage()
+            sys.exit(1)
+
+        cmd = sys.argv[1]
+        sys.argv = [sys.argv[0], *sys.argv[2:]]  # Remove subcommand from args
+
+        if cmd == "serve":
+            from .server import run
+
+            run()
+        elif cmd == "search":
+            from .cli import search
+
+            search()
+        elif cmd == "duplicates":
+            from .cli import duplicates
+
+            duplicates()
+        else:
+            _print_usage()
+            sys.exit(1)
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
         sys.exit(1)
-
-    cmd = sys.argv[1]
-    sys.argv = [sys.argv[0], *sys.argv[2:]]  # Remove subcommand from args
-
-    if cmd == "serve":
-        from .server import run
-
-        run()
-    elif cmd == "search":
-        from .cli import search
-
-        search()
-    elif cmd == "duplicates":
-        from .cli import duplicates
-
-        duplicates()
-    else:
-        _print_usage()
+    except OSError as e:
+        logger.error(f"I/O error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        sys.exit(130)
+    except Exception:
+        logger.exception("Unexpected error occurred")
         sys.exit(1)
 
 

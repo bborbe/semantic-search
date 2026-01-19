@@ -2,11 +2,10 @@
 
 import logging
 import os
-from threading import Lock
 
 from fastmcp import FastMCP
 
-from .indexer import VaultIndexer, VaultWatcher
+from .factory import create_indexer
 
 logger = logging.getLogger(__name__)
 
@@ -16,22 +15,6 @@ CONTENT_PATHS = [p.strip() for p in _raw_paths.split(",") if p.strip()]
 
 # MCP server instance
 mcp = FastMCP("semantic-search-mcp")
-
-# Lazy initialization
-_indexer = None
-_watcher = None
-_indexer_lock = Lock()
-
-
-def get_indexer() -> VaultIndexer:
-    """Get or create the indexer instance."""
-    global _indexer, _watcher
-    with _indexer_lock:
-        if _indexer is None:
-            _indexer = VaultIndexer(CONTENT_PATHS)
-            _watcher = VaultWatcher(_indexer)
-            _watcher.start(background=True)
-    return _indexer
 
 
 @mcp.tool
@@ -45,7 +28,7 @@ def search_related(query: str, top_k: int = 5) -> list[dict[str, str | float]]:
     Returns:
         List of matching notes with path and similarity score
     """
-    indexer = get_indexer()
+    indexer = create_indexer(CONTENT_PATHS)
     return indexer.search(query, top_k)
 
 
@@ -59,7 +42,7 @@ def check_duplicates(file_path: str) -> list[dict[str, str | float]] | dict[str,
     Returns:
         List of similar notes with path and similarity score, or error dict
     """
-    indexer = get_indexer()
+    indexer = create_indexer(CONTENT_PATHS)
     return indexer.find_duplicates(file_path)
 
 

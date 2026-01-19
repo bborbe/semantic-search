@@ -8,6 +8,14 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.4.1
+
+- Extract factory function to dedicated factory.py module (composition root pattern)
+- Add logging_setup.py for centralized logging configuration
+- Add LOG_LEVEL environment variable support for runtime log control
+- Add comprehensive CLI exception handling (FileNotFoundError, OSError, KeyboardInterrupt)
+- Add proper exit codes for CLI errors (130 for Ctrl+C interruption)
+
 ## v0.4.0
 
 - Migrate package to modern src/ layout (semantic_search_mcp/ → src/semantic_search_mcp/)
