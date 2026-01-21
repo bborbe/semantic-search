@@ -50,6 +50,17 @@ Ask Claude:
 
 First run downloads a small embedding model (~90MB) and indexes your markdown files (<1s for typical vaults). Each Claude Code session gets its own index in `/tmp/` that auto-updates when files change. Multiple sessions work independently without conflicts.
 
+### Indexed Content
+
+Each markdown file is indexed with weighted components:
+- **Filename** (3x weight)
+- **Frontmatter**: `title` (3x), `tags` (2x), `aliases` (2x)
+- **Inline tags**: `#tag-name` extracted from body and merged with frontmatter tags (2x)
+- **First H1 heading** (2x)
+- **Body content** (1x, first 500 words)
+
+Inline tags like `#trading`, `#EUR/USD` are automatically extracted and merged with frontmatter tags for better search results.
+
 ## License
 
 This project is licensed under the BSD 2-Clause License - see the [LICENSE](LICENSE) file for details.

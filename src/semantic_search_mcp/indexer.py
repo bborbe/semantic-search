@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -19,6 +20,9 @@ from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
 logger = logging.getLogger(__name__)
+
+# Extract inline markdown tags: #trading, #EUR/USD
+INLINE_TAG_PATTERN = re.compile(r"(?<!\w)#([\w\-/]+)")
 
 
 class VaultIndexer:
@@ -128,6 +132,8 @@ class VaultIndexer:
 
         # 4. Metadata tags and aliases (2x)
         tags_aliases = []
+
+        # Frontmatter tags
         if frontmatter_data.get("tags"):
             tags = frontmatter_data["tags"]
             if isinstance(tags, list):
@@ -135,6 +141,14 @@ class VaultIndexer:
             else:
                 tags_aliases.append(str(tags))
 
+        # Inline #tags from body
+        inline_tags = self._extract_inline_tags(content_without_frontmatter)
+
+        # Merge and dedupe (lowercase)
+        all_tags = {t.lower() for t in tags_aliases} | {t.lower() for t in inline_tags}
+        tags_aliases = list(all_tags)
+
+        # Aliases
         if frontmatter_data.get("aliases"):
             aliases = frontmatter_data["aliases"]
             if isinstance(aliases, list):
@@ -162,6 +176,13 @@ class VaultIndexer:
 
         # Join all parts with newlines for readability
         return "\n".join(parts)
+
+    def _extract_inline_tags(self, content: str) -> list[str]:
+        """Extract inline #tags from markdown content.
+
+        Returns tags without # prefix (e.g., ["trading", "EUR/USD"])
+        """
+        return INLINE_TAG_PATTERN.findall(content)
 
     def _embed_text(self, text: str) -> np.ndarray:
         """Generate embedding vector for text."""

@@ -8,6 +8,14 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.5.0
+
+- Add inline tag extraction from markdown content (#tag syntax)
+- Merge inline tags with frontmatter tags (lowercase, deduplicated)
+- Add comprehensive test coverage for tag extraction edge cases
+- Support special characters in tags (hyphens, underscores, slashes)
+- Update documentation with indexed content details
+
 ## v0.4.1
 
 - Extract factory function to dedicated factory.py module (composition root pattern)
