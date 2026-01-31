@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 
 class TestVaultIndexerInit:
@@ -48,6 +49,32 @@ class TestVaultIndexerInit:
 
             # Different paths should have different content hashes
             assert indexer1.index_dir.parent.name != indexer2.index_dir.parent.name
+
+    def test_expands_tilde_in_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test tilde (~) is expanded to home directory in paths."""
+
+        # Create fake home directory structure
+        fake_home = tmp_path / "fake_home"
+        fake_home.mkdir()
+        test_vault = fake_home / "vault"
+        test_vault.mkdir()
+        (test_vault / "note.md").write_text("# Test")
+
+        # Set HOME to our fake directory
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search_mcp.indexer import VaultIndexer
+
+            # Use tilde path - should expand to our fake home
+            indexer = VaultIndexer("~/vault")
+
+            # Tilde should be expanded
+            assert indexer.vault_paths[0] == test_vault
+            assert "~" not in str(indexer.vault_paths[0])
 
 
 class TestVaultIndexerRebuild:

@@ -8,6 +8,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.5.1
+
+- Fix tilde expansion in vault paths (CONTENT_PATH with ~/ now works correctly)
+- Add test coverage for tilde path expansion
+
 ## v0.5.0
 
 - Add inline tag extraction from markdown content (#tag syntax)

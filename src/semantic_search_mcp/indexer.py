@@ -37,7 +37,7 @@ class VaultIndexer:
         # Support both single path (str) and multiple paths (list)
         if isinstance(vault_paths, str):
             vault_paths = [vault_paths]
-        self.vault_paths = [Path(p) for p in vault_paths]
+        self.vault_paths = [Path(p).expanduser() for p in vault_paths]
         self.embedding_model = embedding_model
         self.duplicate_threshold = duplicate_threshold
 
