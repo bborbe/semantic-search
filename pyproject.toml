@@ -2,7 +2,7 @@
 name = "semantic-search-mcp"
 version = "0.1.0"
 description = "MCP server for semantic search in Obsidian vaults"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "BSD-2-Clause" }
 readme = "README.md"
 authors = [
@@ -38,7 +38,7 @@ packages = ["src/semantic_search_mcp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -55,7 +55,7 @@ select = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true

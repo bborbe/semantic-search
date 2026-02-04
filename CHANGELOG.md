@@ -8,6 +8,14 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.6.0
+
+- Upgrade to Python 3.14 from 3.12
+- Update major dependencies: anyio 4.12.1, cryptography 46.0.4, fastmcp 2.14.5, huggingface-hub 1.3.7, numpy 2.4.2
+- Update development tools: mypy 1.19.1, ruff with enhanced rule set
+- Add croniter dependency for scheduling support
+- Improve type safety with stricter mypy configuration
+
 ## v0.5.1
 
 - Fix tilde expansion in vault paths (CONTENT_PATH with ~/ now works correctly)

@@ -37,3 +37,7 @@ ENV/
 .claude/
 CLAUDE.md
 .mcp.json
+/.update-logs/
+/.claude/
+/CLAUDE.md
+/.mcp-*

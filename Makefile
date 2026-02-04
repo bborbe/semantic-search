@@ -1,7 +1,11 @@
-.PHONY: install format lint typecheck check test precommit
+.PHONY: install sync format lint typecheck check test precommit
 
-install:
-	uv sync --all-extras
+# Install dependencies (alias for sync)
+install: sync
+
+# Sync dependencies
+sync:
+	@uv sync --all-extras
 
 format:
 	uv run ruff format .
@@ -18,5 +22,5 @@ check: lint typecheck
 test:
 	uv run pytest -v || test $$? -eq 5
 
-precommit: format test check
+precommit: sync format test check
 	@echo "✓ All precommit checks passed"
