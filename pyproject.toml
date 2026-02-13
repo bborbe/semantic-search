@@ -1,6 +1,6 @@
 [project]
 name = "semantic-search-mcp"
-version = "0.7.0"
+version = "0.6.0"
 description = "Semantic search over markdown files (MCP + REST modes)"
 requires-python = ">=3.14"
 license = { text = "BSD-2-Clause" }
