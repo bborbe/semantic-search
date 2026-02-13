@@ -8,6 +8,14 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- Add REST server mode for OpenClaw and HTTP clients
+- New `--mode rest` option for serve command
+- REST endpoints: /search, /duplicates, /health, /reindex
+- Configurable port with `--port` flag (default: 8321)
+- Index stays in memory with file watching (same as MCP mode)
+
 ## v0.6.0
 
 - Upgrade to Python 3.14 from 3.12

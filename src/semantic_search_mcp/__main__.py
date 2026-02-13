@@ -1,5 +1,6 @@
-"""Entry point for the semantic search MCP server."""
+"""Entry point for the semantic search server."""
 
+import argparse
 import logging
 import os
 import sys
@@ -24,9 +25,7 @@ def main() -> None:
         sys.argv = [sys.argv[0], *sys.argv[2:]]  # Remove subcommand from args
 
         if cmd == "serve":
-            from .server import run
-
-            run()
+            _serve()
         elif cmd == "search":
             from .cli import search
 
@@ -52,16 +51,49 @@ def main() -> None:
         sys.exit(1)
 
 
+def _serve() -> None:
+    """Handle serve command with mode selection."""
+    parser = argparse.ArgumentParser(description="Start semantic search server")
+    parser.add_argument(
+        "--mode",
+        choices=["mcp", "rest"],
+        default="mcp",
+        help="Server mode: mcp (default) or rest"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8321,
+        help="Port for REST server (default: 8321)"
+    )
+    args = parser.parse_args()
+
+    if args.mode == "mcp":
+        from .server import run
+
+        run()
+    else:
+        from .rest_server import run
+
+        run(port=args.port)
+
+
 def _print_usage() -> None:
     print("Usage: semantic-search-mcp <command> [options]")
     print()
     print("Commands:")
-    print("  serve        Start MCP server")
-    print("  search       Search for related notes")
-    print("  duplicates   Find duplicate notes")
+    print("  serve        Start server (MCP or REST mode)")
+    print("  search       Search for related notes (one-shot)")
+    print("  duplicates   Find duplicate notes (one-shot)")
+    print()
+    print("Serve options:")
+    print("  --mode mcp|rest   Server mode (default: mcp)")
+    print("  --port PORT       REST server port (default: 8321)")
     print()
     print("Examples:")
-    print("  semantic-search-mcp serve")
+    print("  semantic-search-mcp serve                    # MCP mode (for Claude Code)")
+    print("  semantic-search-mcp serve --mode rest        # REST mode (for OpenClaw)")
+    print("  semantic-search-mcp serve --mode rest --port 9000")
     print("  semantic-search-mcp search trading strategy")
     print("  semantic-search-mcp duplicates path/to/note.md")
 
