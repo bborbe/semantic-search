@@ -56,7 +56,7 @@ class TestSemanticSearchHandler:
         # Mock the indexer
         with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
-            mock_indexer.documents = ["doc1", "doc2"]
+            mock_indexer.meta = {"0": {}, "1": {}}  # 2 indexed files
             mock_get.return_value = mock_indexer
 
             handler.do_GET()
@@ -140,7 +140,7 @@ class TestSemanticSearchHandler:
 
         with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
-            mock_indexer.documents = ["doc1"]
+            mock_indexer.meta = {"0": {}}  # 1 indexed file
             mock_get.return_value = mock_indexer
 
             # Reset the global indexer
@@ -159,7 +159,7 @@ class TestSemanticSearchHandler:
 
         with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
-            mock_indexer.documents = []
+            mock_indexer.meta = {}  # Empty index
             mock_get.return_value = mock_indexer
 
             handler.do_POST()

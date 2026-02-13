@@ -129,7 +129,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
         self._send_json({
             "status": "ok",
             "paths": CONTENT_PATHS,
-            "indexed_files": len(indexer.documents) if hasattr(indexer, 'documents') else 0
+            "indexed_files": len(indexer.meta)
         })
 
     def _handle_reindex(self) -> None:
@@ -141,7 +141,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
         self._send_json({
             "status": "ok",
             "message": "Reindex complete",
-            "indexed_files": len(indexer.documents) if hasattr(indexer, 'documents') else 0
+            "indexed_files": len(indexer.meta)
         })
 
     def log_message(self, format: str, *args) -> None:
