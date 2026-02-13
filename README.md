@@ -16,12 +16,28 @@ Supports two server modes:
 
 ## Installation
 
+### Permanent install (recommended)
+
+```bash
+# Install as a tool (creates ~/.local/bin/semantic-search-mcp)
+uv tool install git+https://github.com/bborbe/semantic-search
+
+# CPU-only servers (avoids ~3GB CUDA download)
+uv tool install --index https://download.pytorch.org/whl/cpu \
+  git+https://github.com/bborbe/semantic-search
+```
+
+### One-off usage
+
 ```bash
 # Run directly with uvx (no install needed)
 uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
+```
 
-# Or install locally
-pip install git+https://github.com/bborbe/semantic-search
+### From PyPI (when published)
+
+```bash
+pip install semantic-search-mcp
 ```
 
 ## Server Modes
