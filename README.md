@@ -21,11 +21,18 @@ Supports two server modes:
 ```bash
 # Install as a tool (creates ~/.local/bin/semantic-search-mcp)
 uv tool install git+https://github.com/bborbe/semantic-search
-
-# CPU-only servers (avoids ~3GB CUDA download)
-uv tool install --index https://download.pytorch.org/whl/cpu \
-  git+https://github.com/bborbe/semantic-search
 ```
+
+> **💡 No GPU? Use CPU-only PyTorch**
+>
+> The default install includes CUDA support (~7GB). If you don't have a dedicated GPU, install with CPU-only PyTorch to save ~5GB disk space:
+>
+> ```bash
+> uv tool install --index https://download.pytorch.org/whl/cpu \
+>   git+https://github.com/bborbe/semantic-search
+> ```
+>
+> Performance is identical for typical vault sizes — embedding models run fine on CPU.
 
 ### One-off usage
 
