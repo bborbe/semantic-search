@@ -69,13 +69,13 @@ def _serve() -> None:
     args = parser.parse_args()
 
     if args.mode == "mcp":
-        from .server import run
+        from .server import run as run_mcp
 
-        run()
+        run_mcp()
     else:
-        from .rest_server import run
+        from .rest_server import run as run_rest
 
-        run(port=args.port)
+        run_rest(port=args.port)
 
 
 def _print_usage() -> None:
