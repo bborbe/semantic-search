@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .factory import create_indexer
+from .indexer import VaultIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,10 @@ _raw_paths = os.environ.get("CONTENT_PATH", "./content")
 CONTENT_PATHS = [p.strip() for p in _raw_paths.split(",") if p.strip()]
 
 # Global indexer instance (created once, reused)
-_indexer = None
+_indexer: VaultIndexer | None = None
 
 
-def get_indexer():
+def get_indexer() -> VaultIndexer:
     """Get or create the indexer instance."""
     global _indexer
     if _indexer is None:
@@ -78,7 +79,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             logger.exception("Error handling request")
             self._send_error(str(e), 500)
 
-    def _handle_search(self, params: dict) -> None:
+    def _handle_search(self, params: dict[str, list[str]]) -> None:
         """Handle search request."""
         query_list = params.get("q", [])
         if not query_list:
@@ -86,7 +87,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             return
 
         query = query_list[0]
-        top_k = int(params.get("top_k", [5])[0])
+        top_k = int(params.get("top_k", ["5"])[0])
 
         indexer = get_indexer()
         results = indexer.search(query, top_k)
@@ -97,7 +98,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             "count": len(results)
         })
 
-    def _handle_duplicates(self, params: dict) -> None:
+    def _handle_duplicates(self, params: dict[str, list[str]]) -> None:
         """Handle duplicates check request."""
         file_list = params.get("file", [])
         if not file_list:
@@ -105,7 +106,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             return
 
         file_path = file_list[0]
-        threshold = float(params.get("threshold", [0.85])[0])
+        threshold = float(params.get("threshold", ["0.85"])[0])
 
         indexer = get_indexer()
         # Update threshold if needed
@@ -113,7 +114,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
         results = indexer.find_duplicates(file_path)
 
         if isinstance(results, dict) and "error" in results:
-            self._send_error(results["error"], 400)
+            self._send_error(str(results["error"]), 400)
             return
 
         self._send_json({
@@ -144,7 +145,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             "indexed_files": len(indexer.meta)
         })
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         """Override to use our logger."""
         logger.info("%s - %s", self.address_string(), format % args)
 

@@ -15,6 +15,8 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 - REST endpoints: /search, /duplicates, /health, /reindex
 - Configurable port with `--port` flag (default: 8321)
 - Index stays in memory with file watching (same as MCP mode)
+- Improve README with uv tool install instructions and CPU-only note
+- Add CI workflow for lint, typecheck, and tests
 
 ## v0.6.0
 
