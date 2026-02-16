@@ -19,7 +19,7 @@ typecheck:
 
 check: lint typecheck
 
-test:
+test: sync
 	uv run pytest -v || test $$? -eq 5
 
 precommit: sync format test check
