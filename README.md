@@ -34,17 +34,16 @@ uv tool install git+https://github.com/bborbe/semantic-search
 >
 > Performance is identical for typical vault sizes — embedding models run fine on CPU.
 
+### Upgrade
+
+```bash
+uv tool upgrade semantic-search
+```
+
 ### One-off usage
 
 ```bash
-# Run directly with uvx (no install needed)
 uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
-```
-
-### From PyPI (when published)
-
-```bash
-pip install semantic-search-mcp
 ```
 
 ## Server Modes
