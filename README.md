@@ -14,36 +14,25 @@ Supports two server modes:
 - Multi-directory support
 - Inline tag extraction (`#tag-name`)
 
-## Installation
+## Install
 
-### Permanent install (recommended)
+CPU-only (recommended — saves ~5GB, identical performance for typical vault sizes):
 
 ```bash
-# Install as a tool (creates ~/.local/bin/semantic-search-mcp)
+uv tool install --index https://download.pytorch.org/whl/cpu \
+  git+https://github.com/bborbe/semantic-search
+```
+
+With CUDA (only if you have a dedicated GPU):
+
+```bash
 uv tool install git+https://github.com/bborbe/semantic-search
 ```
 
-> **💡 No GPU? Use CPU-only PyTorch**
->
-> The default install includes CUDA support (~7GB). If you don't have a dedicated GPU, install with CPU-only PyTorch to save ~5GB disk space:
->
-> ```bash
-> uv tool install --index https://download.pytorch.org/whl/cpu \
->   git+https://github.com/bborbe/semantic-search
-> ```
->
-> Performance is identical for typical vault sizes — embedding models run fine on CPU.
-
-### Upgrade
+## Upgrade
 
 ```bash
 uv tool upgrade semantic-search
-```
-
-### One-off usage
-
-```bash
-uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
 ```
 
 ## Server Modes
@@ -64,12 +53,7 @@ claude mcp add -s project semantic-search \
 ### REST Mode (for OpenClaw/HTTP)
 
 ```bash
-# Start server
 CONTENT_PATH=/path/to/vault semantic-search-mcp serve --mode rest --port 8321
-
-# Or with uvx
-CONTENT_PATH=/path/to/vault uvx --from git+https://github.com/bborbe/semantic-search \
-  semantic-search-mcp serve --mode rest --port 8321
 ```
 
 **Endpoints:**
