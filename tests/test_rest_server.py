@@ -145,6 +145,7 @@ class TestSemanticSearchHandler:
 
             # Reset the global indexer
             import semantic_search_mcp.rest_server as rest_module
+
             rest_module._indexer = mock_indexer
 
             handler.do_GET()

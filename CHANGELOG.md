@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.6.2
+
+- Fix fastmcp + pydantic >=2.12 compatibility by pinning fastmcp>=2.12.4
+- Add import smoke tests to catch dependency incompatibilities
+- Improve README install/upgrade documentation
+
 ## v0.6.1
 
 - Add REST server mode for OpenClaw and HTTP clients

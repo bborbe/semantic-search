@@ -55,16 +55,10 @@ def _serve() -> None:
     """Handle serve command with mode selection."""
     parser = argparse.ArgumentParser(description="Start semantic search server")
     parser.add_argument(
-        "--mode",
-        choices=["mcp", "rest"],
-        default="mcp",
-        help="Server mode: mcp (default) or rest"
+        "--mode", choices=["mcp", "rest"], default="mcp", help="Server mode: mcp (default) or rest"
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8321,
-        help="Port for REST server (default: 8321)"
+        "--port", type=int, default=8321, help="Port for REST server (default: 8321)"
     )
     args = parser.parse_args()
 

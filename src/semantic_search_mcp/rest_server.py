@@ -92,11 +92,7 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
         indexer = get_indexer()
         results = indexer.search(query, top_k)
 
-        self._send_json({
-            "query": query,
-            "results": results,
-            "count": len(results)
-        })
+        self._send_json({"query": query, "results": results, "count": len(results)})
 
     def _handle_duplicates(self, params: dict[str, list[str]]) -> None:
         """Handle duplicates check request."""
@@ -117,21 +113,21 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
             self._send_error(str(results["error"]), 400)
             return
 
-        self._send_json({
-            "file": file_path,
-            "threshold": threshold,
-            "duplicates": results,
-            "count": len(results)
-        })
+        self._send_json(
+            {
+                "file": file_path,
+                "threshold": threshold,
+                "duplicates": results,
+                "count": len(results),
+            }
+        )
 
     def _handle_health(self) -> None:
         """Handle health check."""
         indexer = get_indexer()
-        self._send_json({
-            "status": "ok",
-            "paths": CONTENT_PATHS,
-            "indexed_files": len(indexer.meta)
-        })
+        self._send_json(
+            {"status": "ok", "paths": CONTENT_PATHS, "indexed_files": len(indexer.meta)}
+        )
 
     def _handle_reindex(self) -> None:
         """Force reindex."""
@@ -139,11 +135,9 @@ class SemanticSearchHandler(BaseHTTPRequestHandler):
         logger.info("Forcing reindex...")
         _indexer = None
         indexer = get_indexer()
-        self._send_json({
-            "status": "ok",
-            "message": "Reindex complete",
-            "indexed_files": len(indexer.meta)
-        })
+        self._send_json(
+            {"status": "ok", "message": "Reindex complete", "indexed_files": len(indexer.meta)}
+        )
 
     def log_message(self, format: str, *args: Any) -> None:
         """Override to use our logger."""
