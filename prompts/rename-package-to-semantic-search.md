@@ -5,7 +5,7 @@ status: draft
 <summary>
 - Rename the Python package from semantic_search_mcp to semantic_search
 - Rename the CLI binary from semantic-search-mcp to semantic-search
-- Move the source directory from src/semantic_search_mcp/ to src/semantic_search/
+- Move the source directory to match the new package name
 - Update all imports, test references, and documentation to use the new name
 - The MCP server name changes from "semantic-search-mcp" to "semantic-search"
 </summary>
