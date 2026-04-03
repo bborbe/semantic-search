@@ -35,10 +35,12 @@ ENV/
 
 # Claude Code
 .claude/
-CLAUDE.md
 .mcp.json
 /.update-logs/
 /.claude/
-/CLAUDE.md
 /.mcp-*
-5212ebc9/
+
+# Dark Factory
+/.dark-factory.lock
+/prompts/log
+/specs/log
