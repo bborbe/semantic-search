@@ -94,6 +94,39 @@ class TestVaultIndexerRebuild:
             # Should have indexed files from both vaults
             assert len(indexer.meta) == 2
 
+    def test_metadata_does_not_store_content(self, temp_vault: Path) -> None:
+        """Test metadata only stores path, not file content."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            for entry in indexer.meta.values():
+                assert "content" not in entry
+                assert "path" in entry
+
+    def test_modifying_same_file_twice_no_duplicate_entries(self, temp_vault: Path) -> None:
+        """Test modifying a file twice does not create duplicate index entries."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            initial_count = len(indexer.meta)
+
+            # Add the same file twice
+            test_file = temp_vault / "test-note.md"
+            indexer.add_file_to_index(test_file)
+            indexer.add_file_to_index(test_file)
+
+            # Count should not grow — rebuild replaces the entry
+            assert len(indexer.meta) == initial_count
+
 
 class TestVaultIndexerFindDuplicates:
     """Tests for duplicate detection."""

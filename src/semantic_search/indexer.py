@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 from threading import Thread
@@ -51,8 +52,9 @@ class VaultIndexer:
         self.meta_file = self.index_dir / "index_meta.json"
 
         self.model = SentenceTransformer(embedding_model)
-        self.meta: dict[str, dict[str, str]] = {}  # {idx: {"path": ..., "content": ...}}
+        self.meta: dict[str, dict[str, str]] = {}  # {idx: {"path": ...}}
         self.index: Any = None  # faiss.IndexFlatIP
+        self._path_to_idx: dict[str, int] = {}  # reverse lookup: path -> index position
         self._load_index()
 
     def _load_index(self) -> None:
@@ -63,10 +65,12 @@ class VaultIndexer:
             self.index = faiss.read_index(str(self.index_file))
             with open(self.meta_file) as f:
                 self.meta = json.load(f)
+            self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
             logger.info(f"[Indexer] Loaded index with {len(self.meta)} entries")
         else:
             self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
             self.meta = {}
+            self._path_to_idx = {}
             logger.info("[Indexer] No existing index found. Building initial index...")
             self.rebuild_index()
 
@@ -194,6 +198,12 @@ class VaultIndexer:
         file_path = Path(file_path)
         if not file_path.exists() or file_path.suffix != ".md":
             return
+
+        # If file already exists in index, do a full rebuild to replace the entry
+        if str(file_path) in self._path_to_idx:
+            self.rebuild_index()
+            return
+
         content = self._read_file(file_path)
         if content is None:
             return
@@ -204,14 +214,15 @@ class VaultIndexer:
 
         idx = len(self.meta)
         self.index.add(vec)
-        # Store original content in metadata for display
-        self.meta[str(idx)] = {"path": str(file_path), "content": content}
+        self.meta[str(idx)] = {"path": str(file_path)}
+        self._path_to_idx[str(file_path)] = idx
         logger.info(f"[Indexer] Indexed {file_path}")
 
     def rebuild_index(self) -> None:
         """Rebuild entire index from all vault paths."""
         self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
-        new_meta = {}
+        new_meta: dict[str, dict[str, str]] = {}
+        new_path_to_idx: dict[str, int] = {}
         idx = 0
         for vault_path in self.vault_paths:
             for file_path in vault_path.rglob("*.md"):
@@ -228,14 +239,15 @@ class VaultIndexer:
                     vec = self._embed_text(weighted_text)
 
                     self.index.add(vec)
-                    # Store original content in metadata for display
-                    new_meta[str(idx)] = {"path": str(file_path), "content": content}
+                    new_meta[str(idx)] = {"path": str(file_path)}
+                    new_path_to_idx[str(file_path)] = idx
                     idx += 1
                     if idx % 100 == 0:
                         logger.info(f"[Indexer] Indexed {idx} files...")
                 except Exception as e:
                     logger.error(f"[Indexer] Failed to index {file_path}: {e}")
         self.meta = new_meta
+        self._path_to_idx = new_path_to_idx
         self.save_index()
         logger.info(f"[Indexer] Rebuilt index with {len(self.meta)} files")
 
@@ -327,20 +339,46 @@ class VaultWatcher:
 
 
 class _VaultEventHandler(FileSystemEventHandler):
+    DEBOUNCE_DELAY: float = 2.0
+
     def __init__(self, indexer: VaultIndexer):
         self.indexer = indexer
+        self._pending: dict[str, float] = {}
+        self._pending_deletes: set[str] = set()
+        self._debounce_timer: threading.Timer | None = None
+        self._lock = threading.Lock()
+
+    def _schedule_flush(self) -> None:
+        """Cancel any existing timer and schedule a new flush."""
+        if self._debounce_timer is not None:
+            self._debounce_timer.cancel()
+        self._debounce_timer = threading.Timer(self.DEBOUNCE_DELAY, self._flush)
+        self._debounce_timer.daemon = True
+        self._debounce_timer.start()
+
+    def _flush(self) -> None:
+        """Process all pending changes with a single rebuild."""
+        with self._lock:
+            self._pending.clear()
+            self._pending_deletes.clear()
+            self._debounce_timer = None
+        logger.info("[EventHandler] Flushing pending file changes, rebuilding index...")
+        self.indexer.rebuild_index()
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            self.indexer.add_file_to_index(str(event.src_path))
-            self.indexer.save_index()
+            with self._lock:
+                self._pending[str(event.src_path)] = time.time()
+                self._schedule_flush()
 
     def on_created(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            self.indexer.add_file_to_index(str(event.src_path))
-            self.indexer.save_index()
+            with self._lock:
+                self._pending[str(event.src_path)] = time.time()
+                self._schedule_flush()
 
     def on_deleted(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            logger.info("[EventHandler] File removed, rebuilding index...")
-            self.indexer.rebuild_index()
+            with self._lock:
+                self._pending_deletes.add(str(event.src_path))
+                self._schedule_flush()
