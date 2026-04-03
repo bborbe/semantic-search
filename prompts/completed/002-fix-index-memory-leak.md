@@ -1,7 +1,12 @@
 ---
-status: approved
+status: completed
+summary: Fixed unbounded memory growth in VaultIndexer by adding path-to-index reverse lookup to prevent duplicate entries on file modify, removing content from metadata storage, debouncing watcher events with a 2-second batched rebuild, and replacing per-delete rebuild with a single debounced rebuild.
+container: semantic-search-002-fix-index-memory-leak
+dark-factory-version: v0.89.1-dirty
 created: "2026-04-03T11:24:04Z"
 queued: "2026-04-03T11:24:04Z"
+started: "2026-04-03T11:38:29Z"
+completed: "2026-04-03T11:41:22Z"
 ---
 
 <summary>
