@@ -1,10 +1,12 @@
 ---
-status: executing
+status: completed
+summary: 'Renamed package from semantic-search-mcp to semantic-search: moved src/semantic_search_mcp to src/semantic_search, updated pyproject.toml, server.py, __main__.py, all test files, README.md, CLAUDE.md, and added CHANGELOG entry'
 container: semantic-search-001-rename-package-to-semantic-search
 dark-factory-version: v0.89.1-dirty
 created: "2026-04-03T11:24:01Z"
 queued: "2026-04-03T11:24:01Z"
 started: "2026-04-03T11:24:13Z"
+completed: "2026-04-03T11:38:28Z"
 ---
 
 <summary>
