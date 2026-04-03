@@ -1,5 +1,10 @@
 ---
-status: draft
+status: executing
+container: semantic-search-001-rename-package-to-semantic-search
+dark-factory-version: v0.89.1-dirty
+created: "2026-04-03T11:24:01Z"
+queued: "2026-04-03T11:24:01Z"
+started: "2026-04-03T11:24:13Z"
 ---
 
 <summary>
@@ -21,7 +26,7 @@ The package currently lives at `src/semantic_search_mcp/`. Every Python file imp
 
 Files that need changes:
 - `src/semantic_search_mcp/` directory → rename to `src/semantic_search/`
-- `pyproject.toml` — project name, scripts entry, hatch build packages, mypy src path
+- `pyproject.toml` — project name, scripts entry, hatch build packages
 - `src/semantic_search_mcp/server.py` — FastMCP name string
 - `src/semantic_search_mcp/__main__.py` — usage/help strings
 - `tests/test_imports.py` — import paths
