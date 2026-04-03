@@ -1,3 +1,6 @@
 pr: false
 worktree: false
 validationPrompt: docs/dod.md
+extraMounts:
+  - src: ~/.cache/uv
+    dst: /home/node/.cache/uv

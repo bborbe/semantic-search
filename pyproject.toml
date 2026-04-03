@@ -27,7 +27,8 @@ dev = [
 ]
 
 [project.scripts]
-semantic-search = "semantic_search.__main__:main"
+semantic-search-mcp = "semantic_search.__main__:main"
+semantic-search = "semantic_search.__main__:main_cli"
 
 [build-system]
 requires = ["hatchling"]

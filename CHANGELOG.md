@@ -12,6 +12,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 - feat: Rename package from semantic-search-mcp to semantic-search (binary, imports, package name)
 - fix: Prevent unbounded memory growth in VaultIndexer — deduplicate index entries on file modify, remove content from metadata, debounce watcher events, and replace per-delete rebuild with batched rebuild
+- feat: Add `semantic-search` CLI binary exposing only `search` and `duplicates` commands (no `serve`)
 
 ## v0.6.2
 
