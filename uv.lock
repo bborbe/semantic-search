@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.14"
 
 [[package]]
@@ -1652,7 +1652,7 @@ wheels = [
 ]
 
 [[package]]
-name = "semantic-search-mcp"
+name = "semantic-search"
 version = "0.6.2"
 source = { editable = "." }
 dependencies = [

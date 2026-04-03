@@ -12,11 +12,11 @@ class TestVaultIndexerInit:
 
     def test_accepts_single_string_path(self, temp_vault: Path) -> None:
         """Test backward compatibility with single string path."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             indexer = VaultIndexer(str(temp_vault))
 
@@ -25,11 +25,11 @@ class TestVaultIndexerInit:
 
     def test_accepts_list_of_paths(self, multi_vaults: list[Path]) -> None:
         """Test multiple paths as list."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
@@ -38,11 +38,11 @@ class TestVaultIndexerInit:
 
     def test_creates_unique_index_dir_per_path_combination(self, multi_vaults: list[Path]) -> None:
         """Test different path combinations get different index directories."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             indexer1 = VaultIndexer([str(multi_vaults[0])])
             indexer2 = VaultIndexer([str(v) for v in multi_vaults])
@@ -63,11 +63,11 @@ class TestVaultIndexerInit:
         # Set HOME to our fake directory
         monkeypatch.setenv("HOME", str(fake_home))
 
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             # Use tilde path - should expand to our fake home
             indexer = VaultIndexer("~/vault")
@@ -82,11 +82,11 @@ class TestVaultIndexerRebuild:
 
     def test_indexes_files_from_all_vaults(self, multi_vaults: list[Path]) -> None:
         """Test rebuild_index scans all configured directories."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
@@ -100,11 +100,11 @@ class TestVaultIndexerFindDuplicates:
 
     def test_resolves_relative_path_against_all_vaults(self, multi_vaults: list[Path]) -> None:
         """Test relative paths are checked against all vault directories."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             paths = [str(v) for v in multi_vaults]
             indexer = VaultIndexer(paths)
@@ -121,11 +121,11 @@ class TestVaultIndexerInlineTags:
 
     def test_extracts_inline_tags_from_body(self, tmp_path: Path) -> None:
         """Test inline #tags extracted and merged with frontmatter tags."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()
@@ -158,11 +158,11 @@ Also testing #EUR/USD format.
 
     def test_inline_tag_pattern_ignores_headers(self, tmp_path: Path) -> None:
         """Test that ## headers are not extracted as tags."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()
@@ -184,11 +184,11 @@ This has #real-tag but headers are not tags.
 
     def test_frontmatter_single_string_tag(self, tmp_path: Path) -> None:
         """Test frontmatter tags as single string (not list)."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()
@@ -208,11 +208,11 @@ Content with #inline-tag
 
     def test_case_insensitive_deduplication(self, tmp_path: Path) -> None:
         """Test tags deduplicated case-insensitively."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()
@@ -233,11 +233,11 @@ Content with #trading and #TRADING
 
     def test_no_frontmatter_section(self, tmp_path: Path) -> None:
         """Test file without frontmatter section."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()
@@ -256,11 +256,11 @@ No frontmatter here, just #inline-tag and #another-tag.
 
     def test_tags_with_special_chars(self, tmp_path: Path) -> None:
         """Test tags with hyphens, underscores, and slashes."""
-        with patch("semantic_search_mcp.indexer.SentenceTransformer") as mock_st:
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
 
-            from semantic_search_mcp.indexer import VaultIndexer
+            from semantic_search.indexer import VaultIndexer
 
             vault = tmp_path / "vault"
             vault.mkdir()

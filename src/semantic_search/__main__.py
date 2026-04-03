@@ -73,7 +73,7 @@ def _serve() -> None:
 
 
 def _print_usage() -> None:
-    print("Usage: semantic-search-mcp <command> [options]")
+    print("Usage: semantic-search <command> [options]")
     print()
     print("Commands:")
     print("  serve        Start server (MCP or REST mode)")
@@ -85,11 +85,11 @@ def _print_usage() -> None:
     print("  --port PORT       REST server port (default: 8321)")
     print()
     print("Examples:")
-    print("  semantic-search-mcp serve                    # MCP mode (for Claude Code)")
-    print("  semantic-search-mcp serve --mode rest        # REST mode (for OpenClaw)")
-    print("  semantic-search-mcp serve --mode rest --port 9000")
-    print("  semantic-search-mcp search trading strategy")
-    print("  semantic-search-mcp duplicates path/to/note.md")
+    print("  semantic-search serve                    # MCP mode (for Claude Code)")
+    print("  semantic-search serve --mode rest        # REST mode (for OpenClaw)")
+    print("  semantic-search serve --mode rest --port 9000")
+    print("  semantic-search search trading strategy")
+    print("  semantic-search duplicates path/to/note.md")
 
 
 if __name__ == "__main__":

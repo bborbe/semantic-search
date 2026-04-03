@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: Rename package from semantic-search-mcp to semantic-search (binary, imports, package name)
+
 ## v0.6.2
 
 - Fix fastmcp + pydantic >=2.12 compatibility by pinning fastmcp>=2.12.4

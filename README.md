@@ -43,7 +43,7 @@ uv tool upgrade semantic-search
 claude mcp add -s project semantic-search \
   --env CONTENT_PATH=/path/to/vault \
   -- \
-  uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
+  uvx --from git+https://github.com/bborbe/semantic-search semantic-search serve
 ```
 
 **Tools available:**
@@ -53,7 +53,7 @@ claude mcp add -s project semantic-search \
 ### REST Mode (for OpenClaw/HTTP)
 
 ```bash
-CONTENT_PATH=/path/to/vault semantic-search-mcp serve --mode rest --port 8321
+CONTENT_PATH=/path/to/vault semantic-search serve --mode rest --port 8321
 ```
 
 **Endpoints:**
@@ -83,10 +83,10 @@ One-shot commands without running a server:
 
 ```bash
 # Search
-CONTENT_PATH=/path/to/vault semantic-search-mcp search "kubernetes deployment"
+CONTENT_PATH=/path/to/vault semantic-search search "kubernetes deployment"
 
 # Find duplicates
-CONTENT_PATH=/path/to/vault semantic-search-mcp duplicates path/to/note.md
+CONTENT_PATH=/path/to/vault semantic-search duplicates path/to/note.md
 ```
 
 ## Configuration

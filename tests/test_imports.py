@@ -12,4 +12,4 @@ def test_fastmcp_import() -> None:
 
 def test_server_module_import() -> None:
     """Server module must import successfully."""
-    from semantic_search_mcp import server  # noqa: F401
+    from semantic_search import server  # noqa: F401

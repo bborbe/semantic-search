@@ -1,1 +1,1 @@
-"""Tests for semantic-search-mcp."""
+"""Tests for semantic-search."""

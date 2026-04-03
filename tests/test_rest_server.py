@@ -4,7 +4,7 @@ import json
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-from semantic_search_mcp.rest_server import SemanticSearchHandler, get_indexer
+from semantic_search.rest_server import SemanticSearchHandler, get_indexer
 
 
 class MockRequest:
@@ -54,7 +54,7 @@ class TestSemanticSearchHandler:
         handler = self.create_handler("/health")
 
         # Mock the indexer
-        with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
+        with patch("semantic_search.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
             mock_indexer.meta = {"0": {}, "1": {}}  # 2 indexed files
             mock_get.return_value = mock_indexer
@@ -80,7 +80,7 @@ class TestSemanticSearchHandler:
         """Test /search with query parameter."""
         handler = self.create_handler("/search?q=test+query&top_k=3")
 
-        with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
+        with patch("semantic_search.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
             mock_indexer.search.return_value = [
                 {"path": "note1.md", "score": 0.9},
@@ -110,7 +110,7 @@ class TestSemanticSearchHandler:
         """Test /duplicates with file parameter."""
         handler = self.create_handler("/duplicates?file=note.md&threshold=0.9")
 
-        with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
+        with patch("semantic_search.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
             mock_indexer.find_duplicates.return_value = [
                 {"path": "similar.md", "score": 0.95},
@@ -138,13 +138,13 @@ class TestSemanticSearchHandler:
         """Test GET /reindex forces reindex."""
         handler = self.create_handler("/reindex")
 
-        with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
+        with patch("semantic_search.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
             mock_indexer.meta = {"0": {}}  # 1 indexed file
             mock_get.return_value = mock_indexer
 
             # Reset the global indexer
-            import semantic_search_mcp.rest_server as rest_module
+            import semantic_search.rest_server as rest_module
 
             rest_module._indexer = mock_indexer
 
@@ -158,7 +158,7 @@ class TestSemanticSearchHandler:
         """Test POST /reindex forces reindex."""
         handler = self.create_handler("/reindex", method="POST")
 
-        with patch("semantic_search_mcp.rest_server.get_indexer") as mock_get:
+        with patch("semantic_search.rest_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
             mock_indexer.meta = {}  # Empty index
             mock_get.return_value = mock_indexer
@@ -174,12 +174,12 @@ class TestGetIndexer:
 
     def test_creates_indexer_once(self):
         """Test indexer is created once and reused."""
-        import semantic_search_mcp.rest_server as rest_module
+        import semantic_search.rest_server as rest_module
 
         # Reset global state
         rest_module._indexer = None
 
-        with patch("semantic_search_mcp.rest_server.create_indexer") as mock_create:
+        with patch("semantic_search.rest_server.create_indexer") as mock_create:
             mock_indexer = MagicMock()
             mock_create.return_value = mock_indexer
 

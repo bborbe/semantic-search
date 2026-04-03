@@ -79,7 +79,7 @@ Semantic search over markdown files — MCP + REST modes.
 ### Toolchain
 
 - Python 3.14+, `uv` package manager, `hatchling` build backend
-- Source at `src/semantic_search_mcp/` (src/ layout)
+- Source at `src/semantic_search/` (src/ layout)
 - Strict mypy enabled
 
 ### Build and test
@@ -96,7 +96,7 @@ Semantic search over markdown files — MCP + REST modes.
 ## Architecture
 
 ```
-src/semantic_search_mcp/
+src/semantic_search/
 ├── __main__.py      — CLI entry point (serve, search, duplicates)
 ├── cli.py           — One-shot CLI commands
 ├── factory.py       — Thread-safe singleton for indexer + watcher
@@ -113,4 +113,4 @@ src/semantic_search_mcp/
 - **Temp dir for index** — FAISS index stored in `/tmp/semantic-search/{hash}/{pid}/`, not in vault
 - **Full content in meta** — `self.meta` stores entire file content per entry (for future features)
 - **Two server modes** — MCP (fastmcp) for Claude Code, REST for HTTP clients; share same indexer
-- **src/ layout** — Package at `src/semantic_search_mcp/`, not root
+- **src/ layout** — Package at `src/semantic_search/`, not root

@@ -14,7 +14,7 @@ _raw_paths = os.environ.get("CONTENT_PATH", "./content")
 CONTENT_PATHS = [p.strip() for p in _raw_paths.split(",") if p.strip()]
 
 # MCP server instance
-mcp = FastMCP("semantic-search-mcp")
+mcp = FastMCP("semantic-search")
 
 
 @mcp.tool
