@@ -55,6 +55,7 @@ class VaultIndexer:
         self.meta: dict[str, dict[str, str]] = {}  # {idx: {"path": ...}}
         self.index: Any = None  # faiss.IndexFlatIP
         self._path_to_idx: dict[str, int] = {}  # reverse lookup: path -> index position
+        self._index_lock = threading.Lock()  # protects all FAISS index operations
         self._load_index()
 
     def _load_index(self) -> None:
@@ -62,23 +63,26 @@ class VaultIndexer:
         self.index_dir.mkdir(parents=True, exist_ok=True)
 
         if self.index_file.exists() and self.meta_file.exists():
-            self.index = faiss.read_index(str(self.index_file))
-            with open(self.meta_file) as f:
-                self.meta = json.load(f)
-            self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
+            with self._index_lock:
+                self.index = faiss.read_index(str(self.index_file))
+                with open(self.meta_file) as f:
+                    self.meta = json.load(f)
+                self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
             logger.info(f"[Indexer] Loaded index with {len(self.meta)} entries")
         else:
-            self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
-            self.meta = {}
-            self._path_to_idx = {}
+            with self._index_lock:
+                self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
+                self.meta = {}
+                self._path_to_idx = {}
             logger.info("[Indexer] No existing index found. Building initial index...")
             self.rebuild_index()
 
     def save_index(self) -> None:
         """Persist index to disk."""
-        faiss.write_index(self.index, str(self.index_file))
-        with open(self.meta_file, "w") as f:
-            json.dump(self.meta, f)
+        with self._index_lock:
+            faiss.write_index(self.index, str(self.index_file))
+            with open(self.meta_file, "w") as f:
+                json.dump(self.meta, f)
         logger.info("[Indexer] Index saved")
 
     def _read_file(self, file_path: Path) -> str | None:
@@ -212,15 +216,17 @@ class VaultIndexer:
         weighted_text = self._prepare_text_for_embedding(file_path, content)
         vec = self._embed_text(weighted_text)
 
-        idx = len(self.meta)
-        self.index.add(vec)
-        self.meta[str(idx)] = {"path": str(file_path)}
-        self._path_to_idx[str(file_path)] = idx
+        with self._index_lock:
+            idx = len(self.meta)
+            self.index.add(vec)
+            self.meta[str(idx)] = {"path": str(file_path)}
+            self._path_to_idx[str(file_path)] = idx
         logger.info(f"[Indexer] Indexed {file_path}")
 
     def rebuild_index(self) -> None:
         """Rebuild entire index from all vault paths."""
-        self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
+        # Build new index and metadata outside the lock (embedding is slow)
+        new_index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
         new_meta: dict[str, dict[str, str]] = {}
         new_path_to_idx: dict[str, int] = {}
         idx = 0
@@ -238,7 +244,7 @@ class VaultIndexer:
                     weighted_text = self._prepare_text_for_embedding(file_path, content)
                     vec = self._embed_text(weighted_text)
 
-                    self.index.add(vec)
+                    new_index.add(vec)
                     new_meta[str(idx)] = {"path": str(file_path)}
                     new_path_to_idx[str(file_path)] = idx
                     idx += 1
@@ -246,8 +252,11 @@ class VaultIndexer:
                         logger.info(f"[Indexer] Indexed {idx} files...")
                 except Exception as e:
                     logger.error(f"[Indexer] Failed to index {file_path}: {e}")
-        self.meta = new_meta
-        self._path_to_idx = new_path_to_idx
+        # Swap atomically under the lock
+        with self._index_lock:
+            self.index = new_index
+            self.meta = new_meta
+            self._path_to_idx = new_path_to_idx
         self.save_index()
         logger.info(f"[Indexer] Rebuilt index with {len(self.meta)} files")
 
@@ -257,12 +266,14 @@ class VaultIndexer:
             return []
 
         vec = self._embed_text(query)
-        k = min(top_k, len(self.meta))
-        distances, indices = self.index.search(vec, k)
+        with self._index_lock:
+            k = min(top_k, len(self.meta))
+            distances, indices = self.index.search(vec, k)
+            meta_snapshot = dict(self.meta)
         results = []
         for score, idx in zip(distances[0], indices[0], strict=True):
-            if str(idx) in self.meta:
-                results.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
+            if str(idx) in meta_snapshot:
+                results.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
         return results
 
     def find_duplicates(self, file_path: str | Path) -> list[dict[str, Any]] | dict[str, str]:
@@ -290,15 +301,17 @@ class VaultIndexer:
         if len(self.meta) == 0:
             return []
 
-        distances, indices = self.index.search(vec, len(self.meta))
+        with self._index_lock:
+            distances, indices = self.index.search(vec, len(self.meta))
+            meta_snapshot = dict(self.meta)
         duplicates = []
         for score, idx in zip(distances[0], indices[0], strict=True):
             if (
-                str(idx) in self.meta
+                str(idx) in meta_snapshot
                 and score > self.duplicate_threshold
-                and Path(self.meta[str(idx)]["path"]).resolve() != file_path.resolve()
+                and Path(meta_snapshot[str(idx)]["path"]).resolve() != file_path.resolve()
             ):
-                duplicates.append({"path": self.meta[str(idx)]["path"], "score": float(score)})
+                duplicates.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
         return duplicates
 
 
