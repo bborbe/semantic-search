@@ -16,14 +16,14 @@ Supports two server transports:
 
 ## Install
 
-CPU-only (recommended — saves ~5GB, identical performance for typical vault sizes):
+**CPU-only install** — recommended for **macOS** (any Mac, Apple Silicon or Intel) and **Linux/Windows without an NVIDIA GPU**. Saves ~5GB of CUDA binaries. On macOS, Apple GPU (MPS) is still auto-detected and used via PyTorch's built-in MPS backend — the "CPU" label refers only to the absence of CUDA, not to the compute device at runtime.
 
 ```bash
 uv tool install --index https://download.pytorch.org/whl/cpu \
   git+https://github.com/bborbe/semantic-search
 ```
 
-With CUDA (only if you have a dedicated GPU):
+**CUDA install** — only for **Linux/Windows with a dedicated NVIDIA GPU**. Not applicable to macOS (NVIDIA CUDA is not supported on Mac).
 
 ```bash
 uv tool install git+https://github.com/bborbe/semantic-search

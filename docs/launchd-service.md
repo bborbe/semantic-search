@@ -13,18 +13,14 @@ Use this setup when you want `semantic-search-http` running continuously so ever
 
 ## Prerequisites
 
-Install the tool first. Use CPU-only if you don't have a dedicated GPU (saves ~5GB, identical performance for typical vault sizes):
+Install the tool first. On macOS use CPU-only — Apple GPU (MPS) is still auto-detected via PyTorch's built-in MPS backend; "CPU-only" just strips the unused 5GB of CUDA (Linux/NVIDIA) binaries:
 
 ```bash
 uv tool install --index https://download.pytorch.org/whl/cpu \
   git+https://github.com/bborbe/semantic-search
 ```
 
-With CUDA (only if you have a dedicated GPU):
-
-```bash
-uv tool install git+https://github.com/bborbe/semantic-search
-```
+(CUDA install — `uv tool install git+https://github.com/bborbe/semantic-search` — only applies to Linux with a dedicated NVIDIA GPU, never macOS.)
 
 Or upgrade an existing install:
 
