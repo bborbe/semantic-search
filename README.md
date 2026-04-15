@@ -2,9 +2,9 @@
 
 Semantic search over markdown files. Find related notes by meaning, not just keywords. Detect duplicates before creating new notes.
 
-Supports two server modes:
-- **MCP mode** — For Claude Code integration
-- **REST mode** — For OpenClaw, scripts, and HTTP clients
+Supports two server transports:
+- **stdio MCP** — For Claude Code integration (one process per session)
+- **HTTP** — Combined MCP-over-HTTP + REST on one port; one warm process shared by all clients
 
 ## Features
 
@@ -37,29 +37,47 @@ uv tool upgrade semantic-search
 
 ## Server Modes
 
-### MCP Mode (for Claude Code)
+### stdio MCP (per-session Claude Code)
+
+Spawns one process per Claude Code session. Simple, but each session loads its own ~400 MB–1 GB model copy.
 
 ```bash
 claude mcp add -s project semantic-search \
   --env CONTENT_PATH=/path/to/vault \
   -- \
-  uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
+  uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp
 ```
 
 **Tools available:**
 - `search_related(query, top_k=5)` — Find semantically related notes
 - `check_duplicates(file_path)` — Detect duplicate/similar notes
 
-### REST Mode (for OpenClaw/HTTP)
+### HTTP (shared across all clients)
+
+Single long-running process serves MCP-over-HTTP at `/mcp` plus REST at `/search`, `/duplicates`, `/health`, `/reindex`. All Claude Code sessions and REST clients share one warm indexer.
 
 ```bash
-CONTENT_PATH=/path/to/vault semantic-search-mcp serve --mode rest --port 8321
+CONTENT_PATH=/path/to/vault semantic-search-http --host 127.0.0.1 --port 8321
 ```
 
-**Endpoints:**
+Point Claude Code at it via MCP config:
+
+```json
+{
+  "mcpServers": {
+    "semantic-search": {
+      "type": "http",
+      "url": "http://127.0.0.1:8321/mcp"
+    }
+  }
+}
+```
+
+**REST endpoints:**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/mcp` | POST | MCP-over-HTTP (Claude Code) |
 | `/search?q=...&top_k=5` | GET | Semantic search |
 | `/duplicates?file=...&threshold=0.85` | GET | Find duplicate notes |
 | `/health` | GET | Health check with index stats |
@@ -68,13 +86,34 @@ CONTENT_PATH=/path/to/vault semantic-search-mcp serve --mode rest --port 8321
 **Example queries:**
 ```bash
 # Search
-curl 'http://localhost:8321/search?q=kubernetes+deployment'
+curl 'http://127.0.0.1:8321/search?q=kubernetes+deployment'
 
 # Find duplicates
-curl 'http://localhost:8321/duplicates?file=notes/my-note.md'
+curl 'http://127.0.0.1:8321/duplicates?file=notes/my-note.md'
 
 # Health check
-curl 'http://localhost:8321/health'
+curl 'http://127.0.0.1:8321/health'
+```
+
+## Run in Background
+
+For production-style usage, run `semantic-search-http` as a background service so every Claude Code session (and any REST client) shares one warm process.
+
+| Platform | Guide |
+|----------|-------|
+| macOS (launchd) | [`docs/launchd-service.md`](docs/launchd-service.md) |
+| Linux (systemd) | [`docs/systemd-user-service.md`](docs/systemd-user-service.md) |
+
+Quick example (macOS):
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist
+```
+
+Quick example (Linux):
+
+```bash
+systemctl --user enable --now semantic-search-http.service
 ```
 
 ## CLI Commands
@@ -89,12 +128,13 @@ CONTENT_PATH=/path/to/vault semantic-search search "kubernetes deployment"
 CONTENT_PATH=/path/to/vault semantic-search duplicates path/to/note.md
 ```
 
-## Two Binaries
+## Binaries
 
 | Binary | Purpose |
 |--------|---------|
-| `semantic-search-mcp` | Server mode — `serve` (MCP or REST), plus `search` and `duplicates` |
-| `semantic-search` | CLI only — `search` and `duplicates` one-shot commands, no `serve` |
+| `semantic-search-http` | Combined HTTP server — MCP at `/mcp` + REST endpoints. Run once, share across clients. |
+| `semantic-search-mcp` | stdio MCP server — one per Claude Code session. Use when HTTP service is not set up. |
+| `semantic-search` | CLI only — `search` and `duplicates` one-shot commands. |
 
 ## Configuration
 

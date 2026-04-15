@@ -56,9 +56,7 @@ class TestDuplicatesEndpoint:
     def test_duplicates_with_file(self) -> None:
         with patch("semantic_search.http_server.get_indexer") as mock_get:
             mock_indexer = MagicMock()
-            mock_indexer.find_duplicates.return_value = [
-                {"path": "similar.md", "score": 0.95}
-            ]
+            mock_indexer.find_duplicates.return_value = [{"path": "similar.md", "score": 0.95}]
             mock_get.return_value = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/duplicates?file=note.md&threshold=0.9")

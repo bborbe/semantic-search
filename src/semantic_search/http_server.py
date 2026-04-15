@@ -2,8 +2,6 @@
 
 import logging
 import os
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from typing import Any
 
 from starlette.applications import Starlette
@@ -80,7 +78,7 @@ async def duplicates(request: Request) -> JSONResponse:
                 "file": file_path,
                 "threshold": threshold,
                 "duplicates": results,
-                "count": len(results),  # type: ignore[arg-type]
+                "count": len(results),
             }
         )
     except Exception as e:
@@ -135,12 +133,8 @@ def main() -> None:
         prog="semantic-search-http",
         description="Unified HTTP server: REST endpoints + MCP-over-HTTP on one port",
     )
-    parser.add_argument(
-        "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)"
-    )
-    parser.add_argument(
-        "--port", type=int, default=8321, help="Port to bind (default: 8321)"
-    )
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8321, help="Port to bind (default: 8321)")
     args = parser.parse_args()
 
     logger.info(f"Building index for: {CONTENT_PATHS}")
