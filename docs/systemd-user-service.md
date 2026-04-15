@@ -53,7 +53,7 @@ After=default.target
 
 [Service]
 Type=simple
-Environment=CONTENT_PATH=%h/Documents/Obsidian/Personal,%h/Documents/Obsidian/Trading
+Environment=CONTENT_PATH=%h/path/to/vault1,%h/path/to/vault2
 Environment=LOG_LEVEL=INFO
 ExecStart=%h/.local/bin/semantic-search-http --host 127.0.0.1 --port 8321
 Restart=on-failure
@@ -139,7 +139,7 @@ curl http://127.0.0.1:8321/health
 Expected response:
 
 ```json
-{"status": "ok", "paths": ["/home/.../Obsidian/Personal", "..."], "indexed_files": 1234}
+{"status": "ok", "paths": ["/home/YOUR_USER/path/to/vault1", "..."], "indexed_files": 1234}
 ```
 
 Follow logs:
