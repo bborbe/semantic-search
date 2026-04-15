@@ -9,7 +9,9 @@ authors = [
     { name="Benjamin Borbe", email="bborbe@rocketnews.de" }
 ]
 dependencies = [
-    "fastmcp>=2.12.4",
+    "fastmcp>=3.2.0",
+    "starlette",
+    "uvicorn",
     "sentence-transformers",
     "faiss-cpu",
     "watchdog",
@@ -28,6 +30,7 @@ dev = [
 
 [project.scripts]
 semantic-search-mcp = "semantic_search.__main__:main"
+semantic-search-http = "semantic_search.http_server:main"
 semantic-search = "semantic_search.__main__:main_cli"
 
 [build-system]

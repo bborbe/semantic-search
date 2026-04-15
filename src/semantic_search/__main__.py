@@ -1,6 +1,5 @@
 """Entry point for the semantic search server."""
 
-import argparse
 import logging
 import os
 import sys
@@ -52,44 +51,27 @@ def main() -> None:
 
 
 def _serve() -> None:
-    """Handle serve command with mode selection."""
-    parser = argparse.ArgumentParser(description="Start semantic search server")
-    parser.add_argument(
-        "--mode", choices=["mcp", "rest"], default="mcp", help="Server mode: mcp (default) or rest"
-    )
-    parser.add_argument(
-        "--port", type=int, default=8321, help="Port for REST server (default: 8321)"
-    )
-    args = parser.parse_args()
+    """Start the stdio MCP server."""
+    from .server import run as run_mcp
 
-    if args.mode == "mcp":
-        from .server import run as run_mcp
-
-        run_mcp()
-    else:
-        from .rest_server import run as run_rest
-
-        run_rest(port=args.port)
+    run_mcp()
 
 
 def _print_usage() -> None:
-    print("Usage: semantic-search-mcp <command> [options]")
+    print("Usage: semantic-search-mcp <command>")
     print()
     print("Commands:")
-    print("  serve        Start server (MCP or REST mode)")
+    print("  serve        Start stdio MCP server (for Claude Code)")
     print("  search       Search for related notes (one-shot)")
     print("  duplicates   Find duplicate notes (one-shot)")
     print()
-    print("Serve options:")
-    print("  --mode mcp|rest   Server mode (default: mcp)")
-    print("  --port PORT       REST server port (default: 8321)")
-    print()
     print("Examples:")
-    print("  semantic-search-mcp serve                    # MCP mode (for Claude Code)")
-    print("  semantic-search-mcp serve --mode rest        # REST mode (for OpenClaw)")
-    print("  semantic-search-mcp serve --mode rest --port 9000")
+    print("  semantic-search-mcp serve")
     print("  semantic-search-mcp search trading strategy")
     print("  semantic-search-mcp duplicates path/to/note.md")
+    print()
+    print("Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),")
+    print("use `semantic-search-http`. For one-shot CLI, use `semantic-search`.")
 
 
 def main_cli() -> None:
