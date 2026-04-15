@@ -65,7 +65,7 @@ Create `~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist`:
     <key>EnvironmentVariables</key>
     <dict>
         <key>CONTENT_PATH</key>
-        <string>/Users/YOUR_USER/path/to/vault1,/Users/YOUR_USER/path/to/vault2</string>
+        <string>/Users/YOUR_USER/Documents/Obsidian/Personal,/Users/YOUR_USER/Documents/Obsidian/Trading</string>
         <key>LOG_LEVEL</key>
         <string>INFO</string>
     </dict>
@@ -133,7 +133,7 @@ curl http://127.0.0.1:8321/health
 Expected response:
 
 ```json
-{"status": "ok", "paths": ["/Users/YOUR_USER/path/to/vault1", "..."], "indexed_files": 1234}
+{"status": "ok", "paths": ["/Users/YOUR_USER/Documents/Obsidian/Personal", "..."], "indexed_files": 1234}
 ```
 
 Check logs:
