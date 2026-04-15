@@ -13,11 +13,17 @@ Use this setup when you want `semantic-search-http` running continuously so ever
 
 ## Prerequisites
 
-Install the tool first (CPU-only recommended):
+Install the tool first. Use CPU-only if you don't have a dedicated GPU (saves ~5GB, identical performance for typical vault sizes):
 
 ```bash
 uv tool install --index https://download.pytorch.org/whl/cpu \
   git+https://github.com/bborbe/semantic-search
+```
+
+With CUDA (only if you have a dedicated GPU):
+
+```bash
+uv tool install git+https://github.com/bborbe/semantic-search
 ```
 
 Or upgrade an existing install:
