@@ -1,6 +1,8 @@
+autoRelease: true
+maxContainers: 5
 pr: false
-worktree: false
 validationPrompt: docs/dod.md
+worktree: false
 extraMounts:
   - src: ~/.cache/uv
     dst: /home/node/.cache/uv
