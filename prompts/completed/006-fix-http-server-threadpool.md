@@ -1,7 +1,12 @@
 ---
-status: approved
+status: completed
+summary: Wrapped VaultIndexer.search and VaultIndexer.find_duplicates in starlette.concurrency.run_in_threadpool in http_server.py, added two threadpool-verification tests, and updated CHANGELOG.md.
+container: semantic-search-006-fix-http-server-threadpool
+dark-factory-version: v0.110.2
 created: "2026-04-16T10:00:00Z"
 queued: "2026-04-16T10:07:38Z"
+started: "2026-04-16T10:42:10Z"
+completed: "2026-04-16T10:47:45Z"
 ---
 
 <summary>
