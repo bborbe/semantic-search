@@ -691,3 +691,37 @@ class TestCacheMigration:
                 old_meta.unlink()
             if old_dir.exists():
                 old_dir.rmdir()
+
+
+class TestEmbedNoProgressBar:
+    """Ensure _embed_text disables tqdm to avoid the threading race.
+
+    sentence_transformers.encode() defaults to show_progress_bar=None which
+    auto-enables tqdm — not thread-safe. We always pass False.
+    """
+
+    def test_embed_text_passes_show_progress_bar_false(self, temp_vault: Path) -> None:
+        """_embed_text must pass show_progress_bar=False to model.encode()."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_model = Mock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.encode.return_value = np.array([[0.1] * 384])
+            mock_st.return_value = mock_model
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            # Clear any calls from __init__/rebuild
+            mock_model.encode.reset_mock()
+
+            # Trigger an embed
+            indexer._embed_text("hello world")
+
+            # Assert last call had show_progress_bar=False
+            assert mock_model.encode.called
+            call_kwargs = mock_model.encode.call_args.kwargs
+            assert call_kwargs.get("show_progress_bar") is False, (
+                f"encode() must be called with show_progress_bar=False "
+                f"to avoid the tqdm threading race; got kwargs={call_kwargs}"
+            )

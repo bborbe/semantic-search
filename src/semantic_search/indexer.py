@@ -242,8 +242,14 @@ class VaultIndexer:
         return INLINE_TAG_PATTERN.findall(content)
 
     def _embed_text(self, text: str) -> np.ndarray:
-        """Generate embedding vector for text."""
-        vec = self.model.encode([text], normalize_embeddings=True)
+        """Generate embedding vector for text.
+
+        `show_progress_bar=False` is load-bearing: sentence-transformers defaults
+        to `None` which auto-enables tqdm, whose internal state is not thread-safe.
+        Concurrent encode() calls (watcher thread + HTTP search handler) were
+        racing on tqdm's `.sp` attribute and raising in production.
+        """
+        vec = self.model.encode([text], normalize_embeddings=True, show_progress_bar=False)
         return vec.astype("float32")
 
     def add_file_to_index(self, file_path: str | Path) -> None:
