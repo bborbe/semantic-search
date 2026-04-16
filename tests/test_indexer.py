@@ -1,7 +1,7 @@
 """Tests for VaultIndexer."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -49,6 +49,27 @@ class TestVaultIndexerInit:
 
             # Different paths should have different content hashes (now the hash IS the dir name)
             assert indexer1.index_dir.name != indexer2.index_dir.name
+
+    def test_index_dir_uses_user_cache_dir(self, temp_vault: Path, tmp_path: Path) -> None:
+        """index_dir must live under platformdirs.user_cache_dir, not tempdir."""
+        fake_cache_root = tmp_path / "fake_user_cache" / "semantic-search"
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch(
+                "semantic_search.indexer.user_cache_dir",
+                return_value=str(fake_cache_root),
+            ):
+                from semantic_search.indexer import VaultIndexer
+
+                indexer = VaultIndexer(str(temp_vault))
+
+            # index_dir = <fake_cache_root>/<8-char-hash>
+            assert str(indexer.index_dir).startswith(str(fake_cache_root))
+            assert indexer.index_dir.parent == fake_cache_root
+            assert len(indexer.index_dir.name) == 8  # md5 truncated to 8 chars
 
     def test_expands_tilde_in_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test tilde (~) is expanded to home directory in paths."""
@@ -514,3 +535,156 @@ class TestVaultIndexerIncremental:
 
             indexer2 = VaultIndexer(str(vault))
             assert target_idx in indexer2._tombstones
+
+
+class TestCacheMigration:
+    """Tests for one-time migration of the cache from tempdir to user cache dir."""
+
+    def test_cache_migration_from_tempdir(self, temp_vault: Path, tmp_path: Path) -> None:
+        """Old tempdir cache is moved to the new location on first startup.
+
+        Seed the OLD tempdir location with index_meta.json + vector_index.faiss
+        for the expected content hash, then construct VaultIndexer and assert
+        both files now live at the new location and the old ones are gone.
+        """
+        import hashlib
+        import tempfile
+
+        fake_cache_root = tmp_path / "fake_user_cache" / "semantic-search"
+
+        # Reproduce the same hash the indexer will compute for temp_vault
+        paths_str = str(temp_vault.resolve())
+        content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
+
+        old_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
+        old_dir.mkdir(parents=True, exist_ok=True)
+        old_meta = old_dir / "index_meta.json"
+        old_faiss = old_dir / "vector_index.faiss"
+        # Minimal valid meta JSON (empty index) — matches the format
+        # _load_index writes via save_index.
+        old_meta.write_text('{"meta": {}, "tombstones": []}')
+        old_faiss.write_bytes(b"\x00\x01\x02\x03FAKE_FAISS")
+
+        try:
+            with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+                mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+                mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+                # Mock faiss.read_index so we don't try to parse the fake bytes
+                with patch("semantic_search.indexer.faiss.read_index") as mock_read:
+                    mock_read.return_value = Mock(ntotal=0)
+                    with patch(
+                        "semantic_search.indexer.user_cache_dir",
+                        return_value=str(fake_cache_root),
+                    ):
+                        from semantic_search.indexer import VaultIndexer
+
+                        indexer = VaultIndexer(str(temp_vault))
+
+            new_meta = fake_cache_root / content_hash / "index_meta.json"
+            new_faiss = fake_cache_root / content_hash / "vector_index.faiss"
+            assert new_meta.exists(), "meta should have been migrated to new dir"
+            assert new_faiss.exists(), "faiss file should have been migrated"
+            assert not old_meta.exists(), "old meta should have been moved away"
+            assert not old_faiss.exists(), "old faiss should have been moved away"
+            # The migrated meta file drove _load_index
+            assert indexer.meta == {}
+        finally:
+            # Clean up in case the test fails before migration
+            for p in (old_meta, old_faiss):
+                if p.exists():
+                    p.unlink()
+            if old_dir.exists():
+                old_dir.rmdir()
+
+    def test_no_migration_when_new_cache_present(self, temp_vault: Path, tmp_path: Path) -> None:
+        """If the new cache dir already has index_meta.json, old tempdir files
+        are left untouched — the new location wins."""
+        import hashlib
+        import tempfile
+
+        fake_cache_root = tmp_path / "fake_user_cache" / "semantic-search"
+
+        paths_str = str(temp_vault.resolve())
+        content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
+
+        # Seed OLD location
+        old_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
+        old_dir.mkdir(parents=True, exist_ok=True)
+        old_meta = old_dir / "index_meta.json"
+        old_meta.write_text('{"meta": {"0": {"path": "/old"}}, "tombstones": []}')
+
+        # Seed NEW location too (pre-existing newer cache)
+        new_dir = fake_cache_root / content_hash
+        new_dir.mkdir(parents=True, exist_ok=True)
+        new_meta = new_dir / "index_meta.json"
+        new_meta.write_text('{"meta": {"0": {"path": "/new"}}, "tombstones": []}')
+        new_faiss = new_dir / "vector_index.faiss"
+        new_faiss.write_bytes(b"NEWFAISS")
+
+        try:
+            with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+                mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+                mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+                with patch("semantic_search.indexer.faiss.read_index") as mock_read:
+                    mock_read.return_value = Mock(ntotal=1)
+                    with patch(
+                        "semantic_search.indexer.user_cache_dir",
+                        return_value=str(fake_cache_root),
+                    ):
+                        from semantic_search.indexer import VaultIndexer
+
+                        VaultIndexer(str(temp_vault))
+
+            # Old file must still be there — migration skipped
+            assert old_meta.exists(), "old meta must be left untouched"
+            # New file must be unchanged (contains /new path, not /old)
+            assert '"/new"' in new_meta.read_text(), "new meta must not be overwritten"
+        finally:
+            for p in (old_meta,):
+                if p.exists():
+                    p.unlink()
+            if old_dir.exists():
+                old_dir.rmdir()
+
+    def test_migration_swallows_oserror(self, temp_vault: Path, tmp_path: Path) -> None:
+        """Migration is best-effort: an OSError during replace must not
+        propagate. The indexer must still construct successfully and fall
+        back to the normal rebuild path."""
+        import hashlib
+        import tempfile
+
+        fake_cache_root = tmp_path / "fake_user_cache" / "semantic-search"
+
+        paths_str = str(temp_vault.resolve())
+        content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
+
+        old_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
+        old_dir.mkdir(parents=True, exist_ok=True)
+        old_meta = old_dir / "index_meta.json"
+        old_meta.write_text('{"meta": {}, "tombstones": []}')
+
+        try:
+            with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+                mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+                mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+                # Force Path.replace to blow up
+                def boom(self: Path, target: Path) -> Path:
+                    raise OSError("simulated cross-device link")
+
+                with patch.object(Path, "replace", boom), patch(
+                    "semantic_search.indexer.user_cache_dir",
+                    return_value=str(fake_cache_root),
+                ):
+                    from semantic_search.indexer import VaultIndexer
+
+                    # Must not raise
+                    indexer = VaultIndexer(str(temp_vault))
+                    assert indexer.index_dir.parent == fake_cache_root
+        finally:
+            if old_meta.exists():
+                old_meta.unlink()
+            if old_dir.exists():
+                old_dir.rmdir()

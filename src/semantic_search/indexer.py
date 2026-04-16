@@ -14,6 +14,7 @@ from typing import Any
 import faiss
 import numpy as np
 import yaml
+from platformdirs import user_cache_dir
 from sentence_transformers import SentenceTransformer
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -41,13 +42,18 @@ class VaultIndexer:
         self.embedding_model = embedding_model
         self.duplicate_threshold = duplicate_threshold
 
-        # Store index in OS temp directory with content hash (no PID so cache survives restart)
+        # Store index in the OS-appropriate user cache directory (stable across reboots,
+        # not subject to macOS /var/folders/.../T/ auto-cleanup). platformdirs returns:
+        #   macOS: ~/Library/Caches/semantic-search
+        #   Linux: $XDG_CACHE_HOME/semantic-search or ~/.cache/semantic-search
+        #   Windows: %LOCALAPPDATA%/semantic-search/Cache
         paths_str = ",".join(str(p.resolve()) for p in self.vault_paths)
         content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
-        self.index_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
+        self.index_dir = Path(user_cache_dir("semantic-search", appauthor=False)) / content_hash
         self.index_file = self.index_dir / "vector_index.faiss"
         self.meta_file = self.index_dir / "index_meta.json"
 
+        self._migrate_from_tempdir(content_hash)
         self.model = SentenceTransformer(embedding_model)
         self.meta: dict[str, dict[str, str]] = {}  # {idx: {"path": ...}}
         self.index: Any = None  # faiss.IndexFlatIP
@@ -55,6 +61,35 @@ class VaultIndexer:
         self._tombstones: set[int] = set()  # logically-deleted idx positions
         self._index_lock = threading.Lock()  # protects all FAISS index operations
         self._load_index()
+
+    def _migrate_from_tempdir(self, content_hash: str) -> None:
+        """Best-effort one-time move of cache files from the pre-0.6.3 tempdir
+        location into the new user cache dir.
+
+        Runs only when the old directory has a cached index AND the new directory
+        does not. Any OSError is swallowed — the worst case is _load_index sees no
+        cache and rebuilds from scratch, which is the same behavior as before.
+        """
+        old_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
+        old_meta = old_dir / "index_meta.json"
+        old_faiss = old_dir / "vector_index.faiss"
+        new_meta = self.meta_file
+        new_faiss = self.index_file
+
+        if not old_meta.exists():
+            return  # nothing to migrate
+        if new_meta.exists():
+            return  # new cache already present, do not overwrite
+
+        try:
+            self.index_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("[Indexer] migrating index cache from tempdir to user cache dir")
+            if old_meta.exists():
+                old_meta.replace(new_meta)
+            if old_faiss.exists():
+                old_faiss.replace(new_faiss)
+        except OSError as e:
+            logger.warning(f"[Indexer] cache migration failed ({e}); will rebuild instead")
 
     def _load_index(self) -> None:
         """Load existing index or build new one."""

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.0
+
+- feat: Move persistent index cache from OS temp directory to platformdirs user cache dir (macOS: ~/Library/Caches/semantic-search/, Linux: ~/.cache/semantic-search/, Windows: %LOCALAPPDATA%/semantic-search/Cache/). macOS no longer auto-cleans the cache.
+- feat: One-time best-effort migration of existing tempdir cache to the new user cache location on first startup — no forced re-embed for existing users.
+
 Please choose versions by [Semantic Versioning](http://semver.org/).
 
 * MAJOR version when you make incompatible API changes,
