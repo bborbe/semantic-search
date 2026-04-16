@@ -674,9 +674,12 @@ class TestCacheMigration:
                 def boom(self: Path, target: Path) -> Path:
                     raise OSError("simulated cross-device link")
 
-                with patch.object(Path, "replace", boom), patch(
-                    "semantic_search.indexer.user_cache_dir",
-                    return_value=str(fake_cache_root),
+                with (
+                    patch.object(Path, "replace", boom),
+                    patch(
+                        "semantic_search.indexer.user_cache_dir",
+                        return_value=str(fake_cache_root),
+                    ),
                 ):
                     from semantic_search.indexer import VaultIndexer
 

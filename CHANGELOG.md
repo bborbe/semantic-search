@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.1
+
+- fix: HTTP server now binds its port immediately on startup and builds the initial vault index in a background task. `/health` returns `{"status":"indexing","ready":false,...}` during the build and `{"status":"ok","ready":true,...}` once done. `/search`, `/duplicates`, and `/reindex` return HTTP 503 with a `Retry-After: 5` header while the indexer is not yet ready. Fixes connection-refused / hung requests during cold start on large vaults.
+
 ## v0.8.0
 
 - feat: Move persistent index cache from OS temp directory to platformdirs user cache dir (macOS: ~/Library/Caches/semantic-search/, Linux: ~/.cache/semantic-search/, Windows: %LOCALAPPDATA%/semantic-search/Cache/). macOS no longer auto-cleans the cache.

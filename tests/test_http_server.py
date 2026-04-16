@@ -1,6 +1,7 @@
 """Tests for unified HTTP server."""
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import MagicMock
 
 from starlette.testclient import TestClient
 
@@ -9,17 +10,83 @@ from semantic_search.http_server import build_app
 
 class TestHealthEndpoint:
     def test_health_returns_ok(self) -> None:
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        original_error = http_server._indexer_error
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.meta = {"0": {}, "1": {}}
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
+            http_server._indexer_error = None
             with TestClient(build_app()) as client:
                 resp = client.get("/health")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
+            http_server._indexer_error = original_error
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
         assert "paths" in data
         assert data["indexed_files"] == 2
+
+    def test_health_returns_indexing_status_when_not_ready(self) -> None:
+        """Before the background build finishes, /health must report
+        status=indexing without blocking on the indexer."""
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        original_error = http_server._indexer_error
+        try:
+            http_server._indexer_ready = asyncio.Event()  # unset
+            http_server._indexer = None
+            http_server._indexer_error = None
+            with TestClient(build_app()) as client:
+                resp = client.get("/health")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
+            http_server._indexer_error = original_error
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "indexing"
+        assert data["ready"] is False
+        assert "paths" in data
+
+    def test_health_returns_ok_when_ready(self) -> None:
+        """Once the Event is set and _indexer is populated, /health returns
+        the full ready response with indexed_files count."""
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        original_error = http_server._indexer_error
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
+            mock_indexer = MagicMock()
+            mock_indexer.meta = {"0": {}, "1": {}, "2": {}}
+            http_server._indexer = mock_indexer
+            http_server._indexer_error = None
+            with TestClient(build_app()) as client:
+                resp = client.get("/health")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
+            http_server._indexer_error = original_error
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["ready"] is True
+        assert data["indexed_files"] == 3
+        assert "paths" in data
 
 
 class TestSearchEndpoint:
@@ -30,15 +97,25 @@ class TestSearchEndpoint:
         assert "Missing 'q' parameter" in resp.json()["error"]
 
     def test_search_with_query(self) -> None:
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.search.return_value = [
                 {"path": "a.md", "score": 0.9},
                 {"path": "b.md", "score": 0.8},
             ]
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/search?q=test+query&top_k=3")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
         assert resp.status_code == 200
         data = resp.json()
         assert data["query"] == "test query"
@@ -54,6 +131,8 @@ class TestSearchEndpoint:
         """
         import threading
 
+        import semantic_search.http_server as http_server
+
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
@@ -61,12 +140,20 @@ class TestSearchEndpoint:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "a.md", "score": 0.9}]
 
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.search.side_effect = fake_search
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/search?q=hello&top_k=5")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
 
         assert resp.status_code == 200
         assert len(observed_thread_ids) == 1
@@ -74,6 +161,27 @@ class TestSearchEndpoint:
             "indexer.search ran on the event loop thread — it must be dispatched "
             "to a worker thread via run_in_threadpool"
         )
+
+    def test_search_returns_503_when_not_ready(self) -> None:
+        """While the index is still building, /search returns 503 with a
+        Retry-After header — not a 500 and not a hang."""
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            http_server._indexer_ready = asyncio.Event()  # unset
+            http_server._indexer = None
+            with TestClient(build_app()) as client:
+                resp = client.get("/search?q=hello")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
+        assert resp.status_code == 503
+        assert resp.headers.get("retry-after") == "5"
+        data = resp.json()
+        assert data["error"] == "indexing in progress"
+        assert data["ready"] is False
 
 
 class TestDuplicatesEndpoint:
@@ -84,12 +192,22 @@ class TestDuplicatesEndpoint:
         assert "Missing 'file' parameter" in resp.json()["error"]
 
     def test_duplicates_with_file(self) -> None:
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.find_duplicates.return_value = [{"path": "similar.md", "score": 0.95}]
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/duplicates?file=note.md&threshold=0.9")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
         assert resp.status_code == 200
         data = resp.json()
         assert data["file"] == "note.md"
@@ -100,6 +218,8 @@ class TestDuplicatesEndpoint:
         """Sync indexer.find_duplicates must be awaited via run_in_threadpool."""
         import threading
 
+        import semantic_search.http_server as http_server
+
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
@@ -107,12 +227,20 @@ class TestDuplicatesEndpoint:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "similar.md", "score": 0.9}]
 
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.find_duplicates.side_effect = fake_find
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/duplicates?file=note.md")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
 
         assert resp.status_code == 200
         assert len(observed_thread_ids) == 1
@@ -126,14 +254,24 @@ class TestDuplicatesEndpoint:
         a dict with an 'error' key (e.g., file not indexed), the handler must
         forward it as a 400 JSON response, not a 200 success.
         """
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.find_duplicates.return_value = {
                 "error": "File not found in index: missing.md"
             }
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.get("/duplicates?file=missing.md")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
         assert resp.status_code == 400
         data = resp.json()
         assert "error" in data
@@ -142,12 +280,22 @@ class TestDuplicatesEndpoint:
 
 class TestReindexEndpoint:
     def test_reindex_post(self) -> None:
-        with patch("semantic_search.http_server.get_indexer") as mock_get:
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
             mock_indexer = MagicMock()
             mock_indexer.meta = {}
-            mock_get.return_value = mock_indexer
+            http_server._indexer = mock_indexer
             with TestClient(build_app()) as client:
                 resp = client.post("/reindex")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
