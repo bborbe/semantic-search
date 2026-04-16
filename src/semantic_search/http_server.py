@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
@@ -51,7 +52,7 @@ async def search(request: Request) -> JSONResponse:
 
         top_k = int(request.query_params.get("top_k", "5"))
         indexer = get_indexer()
-        results: list[Any] = indexer.search(q, top_k)
+        results: list[Any] = await run_in_threadpool(indexer.search, q, top_k)
         return JSONResponse({"query": q, "results": results, "count": len(results)})
     except Exception as e:
         logger.exception("Error handling /search request")
@@ -68,7 +69,7 @@ async def duplicates(request: Request) -> JSONResponse:
         threshold = float(request.query_params.get("threshold", "0.85"))
         indexer = get_indexer()
         indexer.duplicate_threshold = threshold
-        results = indexer.find_duplicates(file_path)
+        results = await run_in_threadpool(indexer.find_duplicates, file_path)
 
         if isinstance(results, dict) and "error" in results:
             return JSONResponse({"error": str(results["error"])}, status_code=400)

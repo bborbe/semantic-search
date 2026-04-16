@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.7.1
+
+- fix: Run blocking VaultIndexer.search and VaultIndexer.find_duplicates calls via starlette.concurrency.run_in_threadpool so HTTP endpoints no longer block the asyncio event loop. /health and /mcp now stay responsive while a search or duplicate query is in flight.
+
 ## v0.7.0
 
 - feat: Rename package from semantic-search-mcp to semantic-search (binary, imports, package name)

@@ -45,6 +45,36 @@ class TestSearchEndpoint:
         assert data["count"] == 2
         mock_indexer.search.assert_called_once_with("test query", 3)
 
+    def test_search_runs_in_threadpool(self) -> None:
+        """Sync indexer.search must be awaited via run_in_threadpool so a slow
+        query does not block the asyncio event loop.
+
+        We prove this by checking the thread on which indexer.search executes is
+        NOT the main thread (which hosts the event loop under TestClient).
+        """
+        import threading
+
+        main_thread_id = threading.get_ident()
+        observed_thread_ids: list[int] = []
+
+        def fake_search(q: str, top_k: int) -> list[dict[str, object]]:
+            observed_thread_ids.append(threading.get_ident())
+            return [{"path": "a.md", "score": 0.9}]
+
+        with patch("semantic_search.http_server.get_indexer") as mock_get:
+            mock_indexer = MagicMock()
+            mock_indexer.search.side_effect = fake_search
+            mock_get.return_value = mock_indexer
+            with TestClient(build_app()) as client:
+                resp = client.get("/search?q=hello&top_k=5")
+
+        assert resp.status_code == 200
+        assert len(observed_thread_ids) == 1
+        assert observed_thread_ids[0] != main_thread_id, (
+            "indexer.search ran on the event loop thread — it must be dispatched "
+            "to a worker thread via run_in_threadpool"
+        )
+
 
 class TestDuplicatesEndpoint:
     def test_duplicates_missing_file_returns_400(self) -> None:
@@ -65,6 +95,31 @@ class TestDuplicatesEndpoint:
         assert data["file"] == "note.md"
         assert data["threshold"] == 0.9
         assert data["count"] == 1
+
+    def test_duplicates_runs_in_threadpool(self) -> None:
+        """Sync indexer.find_duplicates must be awaited via run_in_threadpool."""
+        import threading
+
+        main_thread_id = threading.get_ident()
+        observed_thread_ids: list[int] = []
+
+        def fake_find(file_path: str) -> list[dict[str, object]]:
+            observed_thread_ids.append(threading.get_ident())
+            return [{"path": "similar.md", "score": 0.9}]
+
+        with patch("semantic_search.http_server.get_indexer") as mock_get:
+            mock_indexer = MagicMock()
+            mock_indexer.find_duplicates.side_effect = fake_find
+            mock_get.return_value = mock_indexer
+            with TestClient(build_app()) as client:
+                resp = client.get("/duplicates?file=note.md")
+
+        assert resp.status_code == 200
+        assert len(observed_thread_ids) == 1
+        assert observed_thread_ids[0] != main_thread_id, (
+            "indexer.find_duplicates ran on the event loop thread — it must be "
+            "dispatched via run_in_threadpool"
+        )
 
     def test_duplicates_indexer_returns_error_dict_returns_400(self) -> None:
         """Preserves rest_server.py L112-114: when indexer.find_duplicates returns
