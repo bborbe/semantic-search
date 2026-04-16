@@ -47,8 +47,8 @@ class TestVaultIndexerInit:
             indexer1 = VaultIndexer([str(multi_vaults[0])])
             indexer2 = VaultIndexer([str(v) for v in multi_vaults])
 
-            # Different paths should have different content hashes
-            assert indexer1.index_dir.parent.name != indexer2.index_dir.parent.name
+            # Different paths should have different content hashes (now the hash IS the dir name)
+            assert indexer1.index_dir.name != indexer2.index_dir.name
 
     def test_expands_tilde_in_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test tilde (~) is expanded to home directory in paths."""
@@ -311,3 +311,206 @@ Testing #test-tag and #test_tag and #EUR/USD
             assert "test_tag" in inline_tags
             assert "EUR/USD" in inline_tags
             assert len(inline_tags) == 3
+
+
+class TestVaultIndexerIncremental:
+    """Tests for incremental add/update/remove."""
+
+    def test_add_file_to_index_update_uses_tombstone(self, temp_vault: Path) -> None:
+        """Re-adding an existing path tombstones the old idx and appends a new one."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            test_file = temp_vault / "test-note.md"
+
+            # Disable compaction so the tombstone produced by the UPDATE path
+            # stays observable. Compaction has its own test
+            # (test_tombstone_compaction_triggers_rebuild); here we only care
+            # that the UPDATE path tombstones the old idx and never calls
+            # rebuild_index itself.
+            indexer._maybe_compact = lambda: None  # type: ignore[method-assign]
+
+            rebuild_calls: list[int] = []
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
+
+            before_idx = indexer._path_to_idx[str(test_file)]
+            indexer.add_file_to_index(test_file)  # update path
+            after_idx = indexer._path_to_idx[str(test_file)]
+
+            assert after_idx != before_idx
+            assert before_idx in indexer._tombstones
+            # UPDATE path must never call rebuild_index directly — only
+            # _maybe_compact may, and we've stubbed it out above.
+            assert rebuild_calls == []
+
+    def test_remove_file_from_index(self, temp_vault: Path) -> None:
+        """Removed files disappear from meta and are tombstoned."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            test_file = temp_vault / "test-note.md"
+            idx = indexer._path_to_idx[str(test_file)]
+
+            # Delete from disk first — the realistic call site. Without this,
+            # _maybe_compact would trigger rebuild which re-indexes the still-present file.
+            test_file.unlink()
+            indexer.remove_file_from_index(test_file)
+
+            assert str(test_file) not in indexer._path_to_idx
+            assert str(idx) not in indexer.meta
+            # Tombstone set OR compaction cleared it — both are correct end states.
+            # If compaction ran (1 dead / 1 total = 100%), tombstones are empty.
+            # If not, the removed idx is tombstoned. Assert one of these holds:
+            assert idx in indexer._tombstones or len(indexer._tombstones) == 0
+
+    def test_remove_nonexistent_path_is_noop(self, temp_vault: Path) -> None:
+        """Removing a path that isn't indexed does not raise or mutate state."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            before = dict(indexer.meta)
+
+            indexer.remove_file_from_index("/nowhere/missing.md")
+
+            assert indexer.meta == before
+
+    def test_search_filters_tombstones(self, temp_vault: Path) -> None:
+        """Tombstoned entries never appear in search results."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            # Fresh vault with 10 files so removing one is only 10% tombstones
+            # (below the 20% compaction threshold).
+            vault = temp_vault
+            for i in range(9):
+                (vault / f"note{i}.md").write_text(f"# Note {i}\nContent {i}")
+
+            indexer = VaultIndexer(str(vault))
+            target = vault / "note3.md"
+            target_idx = indexer._path_to_idx[str(target)]
+
+            # Manually tombstone without triggering compaction path
+            with indexer._index_lock:
+                indexer._tombstones.add(target_idx)
+                indexer.meta.pop(str(target_idx), None)
+                indexer._path_to_idx.pop(str(target), None)
+
+            results = indexer.search("anything", top_k=100)
+            paths = [r["path"] for r in results]
+            assert str(target) not in paths
+
+    def test_compaction_triggers_when_tombstone_ratio_exceeds_threshold(
+        self, temp_vault: Path
+    ) -> None:
+        """_maybe_compact must call rebuild_index when tombstones > 20%."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            vault = temp_vault
+            for i in range(9):
+                (vault / f"note{i}.md").write_text(f"# Note {i}")
+
+            indexer = VaultIndexer(str(vault))
+
+            rebuild_calls: list[int] = []
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
+
+            # Force 30% tombstones (3 of 10): compaction MUST fire
+            idxs = list(indexer._path_to_idx.values())[:3]
+            with indexer._index_lock:
+                for idx in idxs:
+                    indexer._tombstones.add(idx)
+
+            indexer._maybe_compact()
+
+            assert len(rebuild_calls) == 1
+
+    def test_compaction_does_not_trigger_below_threshold(self, temp_vault: Path) -> None:
+        """_maybe_compact must NOT call rebuild_index when tombstones <= 20%."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            vault = temp_vault
+            for i in range(19):
+                (vault / f"note{i}.md").write_text(f"# Note {i}")
+
+            indexer = VaultIndexer(str(vault))
+
+            rebuild_calls: list[int] = []
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
+
+            # 10% tombstones (2 of 20): below threshold
+            idxs = list(indexer._path_to_idx.values())[:2]
+            with indexer._index_lock:
+                for idx in idxs:
+                    indexer._tombstones.add(idx)
+
+            indexer._maybe_compact()
+
+            assert rebuild_calls == []
+
+    def test_index_cache_survives_restart(self, temp_vault: Path) -> None:
+        """A second VaultIndexer with the same paths loads the on-disk cache
+        without re-embedding every file. With PID removed from index_dir, the
+        second instantiation must find and load the existing index.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer1 = VaultIndexer(str(temp_vault))
+            assert indexer1.index_file.exists()
+            files_embedded_first_run = mock_st.return_value.encode.call_count
+
+            # Second instantiation of a fresh indexer against the same paths
+            indexer2 = VaultIndexer(str(temp_vault))
+            files_embedded_second_run = mock_st.return_value.encode.call_count
+
+            # Second instantiation must NOT re-embed (cache hit)
+            assert files_embedded_second_run == files_embedded_first_run
+            assert len(indexer2.meta) == len(indexer1.meta)
+            assert indexer2.index_dir == indexer1.index_dir  # no PID path component
+
+    def test_meta_file_format_loads_tombstones(self, temp_vault: Path) -> None:
+        """save_index writes tombstones; _load_index reads them back."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            vault = temp_vault
+            for i in range(9):
+                (vault / f"note{i}.md").write_text(f"# Note {i}")
+
+            indexer1 = VaultIndexer(str(vault))
+            target_idx = next(iter(indexer1._path_to_idx.values()))
+            with indexer1._index_lock:
+                indexer1._tombstones.add(target_idx)
+            indexer1.save_index()
+
+            indexer2 = VaultIndexer(str(vault))
+            assert target_idx in indexer2._tombstones

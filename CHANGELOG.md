@@ -8,11 +8,15 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.7.0
 
 - feat: Rename package from semantic-search-mcp to semantic-search (binary, imports, package name)
 - fix: Prevent unbounded memory growth in VaultIndexer — deduplicate index entries on file modify, remove content from metadata, debounce watcher events, and replace per-delete rebuild with batched rebuild
 - feat: Add `semantic-search` CLI binary exposing only `search` and `duplicates` commands (no `serve`)
+- fix: Convert file watcher from full index rebuild per event to true incremental add/update/remove, ending the runaway rebuild loop that re-embedded all ~4000 vault files on every save.
+- fix: Filter watcher events to ignore non-markdown files and any path with a dotfile segment (.git, .obsidian, .semantic-search, .DS_Store). Eliminates self-triggered rebuilds caused by save_index writes.
+- fix: Remove process-PID from FAISS index cache path so the embedded index survives process restart (startup now loads from disk instead of re-embedding).
+- feat: Tombstone-based logical delete for indexed entries; search and find_duplicates filter tombstones; index self-compacts when tombstone ratio exceeds 20%.
 
 ## v0.6.2
 

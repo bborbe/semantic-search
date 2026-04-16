@@ -3,7 +3,6 @@
 import hashlib
 import json
 import logging
-import os
 import re
 import tempfile
 import threading
@@ -42,12 +41,10 @@ class VaultIndexer:
         self.embedding_model = embedding_model
         self.duplicate_threshold = duplicate_threshold
 
-        # Store index in OS temp directory with content hash and PID
+        # Store index in OS temp directory with content hash (no PID so cache survives restart)
         paths_str = ",".join(str(p.resolve()) for p in self.vault_paths)
         content_hash = hashlib.md5(paths_str.encode()).hexdigest()[:8]
-        self.index_dir = (
-            Path(tempfile.gettempdir()) / "semantic-search" / content_hash / str(os.getpid())
-        )
+        self.index_dir = Path(tempfile.gettempdir()) / "semantic-search" / content_hash
         self.index_file = self.index_dir / "vector_index.faiss"
         self.meta_file = self.index_dir / "index_meta.json"
 
@@ -55,6 +52,7 @@ class VaultIndexer:
         self.meta: dict[str, dict[str, str]] = {}  # {idx: {"path": ...}}
         self.index: Any = None  # faiss.IndexFlatIP
         self._path_to_idx: dict[str, int] = {}  # reverse lookup: path -> index position
+        self._tombstones: set[int] = set()  # logically-deleted idx positions
         self._index_lock = threading.Lock()  # protects all FAISS index operations
         self._load_index()
 
@@ -66,9 +64,19 @@ class VaultIndexer:
             with self._index_lock:
                 self.index = faiss.read_index(str(self.index_file))
                 with open(self.meta_file) as f:
-                    self.meta = json.load(f)
+                    data = json.load(f)
+                # Handle both old (bare dict) and new ({"meta": ..., "tombstones": ...}) formats
+                if isinstance(data, dict) and "meta" in data:
+                    self.meta = data["meta"]
+                    self._tombstones = set(data.get("tombstones", []))
+                else:
+                    self.meta = data
+                    self._tombstones = set()
                 self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
-            logger.info(f"[Indexer] Loaded index with {len(self.meta)} entries")
+            logger.info(
+                f"[Indexer] Loaded index with {len(self.meta)} entries, "
+                f"{len(self._tombstones)} tombstones"
+            )
         else:
             with self._index_lock:
                 self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
@@ -82,7 +90,13 @@ class VaultIndexer:
         with self._index_lock:
             faiss.write_index(self.index, str(self.index_file))
             with open(self.meta_file, "w") as f:
-                json.dump(self.meta, f)
+                json.dump(
+                    {
+                        "meta": self.meta,
+                        "tombstones": sorted(self._tombstones),
+                    },
+                    f,
+                )
         logger.info("[Indexer] Index saved")
 
     def _read_file(self, file_path: Path) -> str | None:
@@ -198,30 +212,72 @@ class VaultIndexer:
         return vec.astype("float32")
 
     def add_file_to_index(self, file_path: str | Path) -> None:
-        """Add or update a single file in the index."""
+        """Add a new file or update an existing one in the index.
+
+        On update: tombstone the old idx, append a new embedding, update lookups.
+        Never triggers a full rebuild on the hot path.
+        """
         file_path = Path(file_path)
         if not file_path.exists() or file_path.suffix != ".md":
-            return
-
-        # If file already exists in index, do a full rebuild to replace the entry
-        if str(file_path) in self._path_to_idx:
-            self.rebuild_index()
             return
 
         content = self._read_file(file_path)
         if content is None:
             return
 
-        # Prepare weighted text for embedding
         weighted_text = self._prepare_text_for_embedding(file_path, content)
         vec = self._embed_text(weighted_text)
 
+        path_str = str(file_path)
         with self._index_lock:
-            idx = len(self.meta)
+            # Tombstone the old entry if this path is already indexed
+            old_idx = self._path_to_idx.get(path_str)
+            if old_idx is not None:
+                self._tombstones.add(old_idx)
+                self.meta.pop(str(old_idx), None)
+
+            new_idx = self.index.ntotal  # next row position before add
             self.index.add(vec)
-            self.meta[str(idx)] = {"path": str(file_path)}
-            self._path_to_idx[str(file_path)] = idx
-        logger.info(f"[Indexer] Indexed {file_path}")
+            self.meta[str(new_idx)] = {"path": path_str}
+            self._path_to_idx[path_str] = new_idx
+
+        self.save_index()
+        self._maybe_compact()
+        logger.info(f"[Indexer] Indexed {file_path} (idx={new_idx})")
+
+    def remove_file_from_index(self, file_path: str | Path) -> None:
+        """Remove a file from the index by tombstoning its entry.
+
+        No-op if the path is not currently indexed.
+        """
+        path_str = str(Path(file_path))
+        with self._index_lock:
+            old_idx = self._path_to_idx.pop(path_str, None)
+            if old_idx is None:
+                return
+            self._tombstones.add(old_idx)
+            self.meta.pop(str(old_idx), None)
+        self.save_index()
+        self._maybe_compact()
+        logger.info(f"[Indexer] Removed {file_path} (idx={old_idx})")
+
+    def _maybe_compact(self) -> None:
+        """Rebuild the index if tombstone ratio exceeds 20%.
+
+        Compaction drops tombstoned vectors and reclaims memory / search cost.
+        Must be called without holding self._index_lock.
+        """
+        with self._index_lock:
+            live = len(self.meta)
+            dead = len(self._tombstones)
+        total = live + dead
+        if total == 0:
+            return
+        if dead > 0.2 * total:
+            logger.info(
+                f"[Indexer] Compacting: {dead} tombstones / {total} total (> 20%), rebuilding index"
+            )
+            self.rebuild_index()
 
     def rebuild_index(self) -> None:
         """Rebuild entire index from all vault paths."""
@@ -257,23 +313,36 @@ class VaultIndexer:
             self.index = new_index
             self.meta = new_meta
             self._path_to_idx = new_path_to_idx
+            self._tombstones = set()
         self.save_index()
         logger.info(f"[Indexer] Rebuilt index with {len(self.meta)} files")
 
     def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """Search for related notes."""
+        """Search for related notes, skipping tombstoned entries."""
         if len(self.meta) == 0:
             return []
 
         vec = self._embed_text(query)
         with self._index_lock:
-            k = min(top_k, len(self.meta))
-            distances, indices = self.index.search(vec, k)
+            # Oversample to account for tombstoned rows we will skip
+            oversample = min(top_k * 4, self.index.ntotal)
+            if oversample == 0:
+                return []
+            distances, indices = self.index.search(vec, oversample)
             meta_snapshot = dict(self.meta)
-        results = []
+            tombstones_snapshot = set(self._tombstones)
+
+        results: list[dict[str, Any]] = []
         for score, idx in zip(distances[0], indices[0], strict=True):
-            if str(idx) in meta_snapshot:
-                results.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
+            if idx < 0:  # FAISS returns -1 for missing slots when k > ntotal
+                continue
+            if int(idx) in tombstones_snapshot:
+                continue
+            if str(idx) not in meta_snapshot:
+                continue
+            results.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
+            if len(results) >= top_k:
+                break
         return results
 
     def find_duplicates(self, file_path: str | Path) -> list[dict[str, Any]] | dict[str, str]:
@@ -302,10 +371,15 @@ class VaultIndexer:
             return []
 
         with self._index_lock:
-            distances, indices = self.index.search(vec, len(self.meta))
+            distances, indices = self.index.search(vec, self.index.ntotal)
             meta_snapshot = dict(self.meta)
+            tombstones_snapshot = set(self._tombstones)
         duplicates = []
         for score, idx in zip(distances[0], indices[0], strict=True):
+            if idx < 0:
+                continue
+            if int(idx) in tombstones_snapshot:
+                continue
             if (
                 str(idx) in meta_snapshot
                 and score > self.duplicate_threshold
@@ -369,29 +443,64 @@ class _VaultEventHandler(FileSystemEventHandler):
         self._debounce_timer.daemon = True
         self._debounce_timer.start()
 
+    @staticmethod
+    def _is_indexable_event(event: FileSystemEvent) -> bool:
+        """Return True iff this event should trigger an incremental update.
+
+        Rejects:
+        - directory events
+        - paths that do not end with .md
+        - paths containing any dotfile segment (.git, .obsidian, .semantic-search, .DS_Store, etc.)
+        """
+        if event.is_directory:
+            return False
+        path = Path(str(event.src_path))
+        if path.suffix != ".md":
+            return False
+        return not any(part.startswith(".") for part in path.parts)
+
     def _flush(self) -> None:
-        """Process all pending changes with a single rebuild."""
+        """Process all pending changes incrementally (no full rebuild)."""
         with self._lock:
+            adds = list(self._pending.keys())
+            deletes = list(self._pending_deletes)
             self._pending.clear()
             self._pending_deletes.clear()
             self._debounce_timer = None
-        logger.info("[EventHandler] Flushing pending file changes, rebuilding index...")
-        self.indexer.rebuild_index()
+
+        if not adds and not deletes:
+            return
+
+        logger.info(f"[EventHandler] Flushing {len(adds)} add/update(s), {len(deletes)} delete(s)")
+        # Process deletes first so a rename (delete + create of new path) is correct
+        for path in deletes:
+            try:
+                self.indexer.remove_file_from_index(path)
+            except Exception:
+                logger.exception(f"[EventHandler] Failed to remove {path}")
+        for path in adds:
+            try:
+                self.indexer.add_file_to_index(path)
+            except Exception:
+                logger.exception(f"[EventHandler] Failed to index {path}")
 
     def on_modified(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            with self._lock:
-                self._pending[str(event.src_path)] = time.time()
-                self._schedule_flush()
+        if not self._is_indexable_event(event):
+            return
+        with self._lock:
+            self._pending[str(event.src_path)] = time.time()
+            self._schedule_flush()
 
     def on_created(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            with self._lock:
-                self._pending[str(event.src_path)] = time.time()
-                self._schedule_flush()
+        if not self._is_indexable_event(event):
+            return
+        with self._lock:
+            self._pending[str(event.src_path)] = time.time()
+            self._schedule_flush()
 
     def on_deleted(self, event: FileSystemEvent) -> None:
-        if not event.is_directory:
-            with self._lock:
-                self._pending_deletes.add(str(event.src_path))
-                self._schedule_flush()
+        if not self._is_indexable_event(event):
+            return
+        with self._lock:
+            self._pending_deletes.add(str(event.src_path))
+            self._schedule_flush()

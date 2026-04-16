@@ -151,8 +151,11 @@ class TestVaultEventHandlerDebounce:
 
                 mock_timer_cls.assert_not_called()
 
-    def test_flush_calls_rebuild_and_clears_pending(self, temp_vault: Path) -> None:
-        """Test that flush triggers rebuild_index and clears pending sets."""
+    def test_flush_calls_incremental_methods_and_clears_pending(self, temp_vault: Path) -> None:
+        """Flush must route pending adds to add_file_to_index and pending deletes
+        to remove_file_from_index — NEVER to rebuild_index (that would cause the
+        runaway rebuild loop this fix targets).
+        """
         with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
             mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
             mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
@@ -165,17 +168,120 @@ class TestVaultEventHandlerDebounce:
             handler._pending["/vault/a.md"] = 1.0
             handler._pending_deletes.add("/vault/b.md")
 
+            add_calls: list[str] = []
+            remove_calls: list[str] = []
             rebuild_calls: list[int] = []
-            original_rebuild = indexer.rebuild_index
 
-            def mock_rebuild() -> None:
-                rebuild_calls.append(1)
-                original_rebuild()
-
-            indexer.rebuild_index = mock_rebuild  # type: ignore[method-assign]
+            indexer.add_file_to_index = lambda p: add_calls.append(str(p))  # type: ignore[assignment,method-assign]
+            indexer.remove_file_from_index = lambda p: remove_calls.append(str(p))  # type: ignore[assignment,method-assign]
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
 
             handler._flush()
 
-            assert len(rebuild_calls) == 1
+            assert add_calls == ["/vault/a.md"]
+            assert remove_calls == ["/vault/b.md"]
+            assert rebuild_calls == []  # flush must NEVER rebuild
             assert len(handler._pending) == 0
             assert len(handler._pending_deletes) == 0
+
+    def test_flush_delete_calls_remove_not_add(self, temp_vault: Path) -> None:
+        """on_deleted → _flush must call remove_file_from_index, not add_file_to_index."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+            indexer = VaultIndexer(str(temp_vault))
+            handler = _VaultEventHandler(indexer)
+
+            add_calls: list[str] = []
+            remove_calls: list[str] = []
+            indexer.add_file_to_index = lambda p: add_calls.append(str(p))  # type: ignore[assignment,method-assign]
+            indexer.remove_file_from_index = lambda p: remove_calls.append(str(p))  # type: ignore[assignment,method-assign]
+
+            handler._pending_deletes.add("/vault/gone.md")
+            handler._flush()
+
+            assert remove_calls == ["/vault/gone.md"]
+            assert add_calls == []
+
+
+class TestVaultEventHandlerFiltering:
+    """Tests for _is_indexable_event filtering."""
+
+    def _make_event(self, path: str, is_directory: bool = False) -> Mock:
+        event = Mock()
+        event.src_path = path
+        event.is_directory = is_directory
+        return event
+
+    def test_non_md_file_is_ignored(self, temp_vault: Path) -> None:
+        """Events for .txt / .log / no-extension files do not schedule a flush."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                for path in ["/vault/a.txt", "/vault/b.log", "/vault/c"]:
+                    handler.on_modified(self._make_event(path))
+                    handler.on_created(self._make_event(path))
+                    handler.on_deleted(self._make_event(path))
+
+                mock_timer_cls.assert_not_called()
+                assert len(handler._pending) == 0
+                assert len(handler._pending_deletes) == 0
+
+    def test_dotfile_segment_is_ignored(self, temp_vault: Path) -> None:
+        """Paths with any segment starting with '.' are skipped.
+
+        Covers .git/, .obsidian/, .semantic-search/, .DS_Store, and nested cases.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                ignored_paths = [
+                    "/vault/.git/index",
+                    "/vault/.git/objects/abc.md",
+                    "/vault/.obsidian/workspace.json",
+                    "/vault/.obsidian/plugins/foo/main.md",
+                    "/vault/.semantic-search/vector_index.faiss",
+                    "/vault/.DS_Store",
+                    "/vault/sub/.hidden/note.md",
+                ]
+                for path in ignored_paths:
+                    handler.on_modified(self._make_event(path))
+
+                mock_timer_cls.assert_not_called()
+
+    def test_plain_md_file_is_indexed(self, temp_vault: Path) -> None:
+        """A plain .md path under a non-dot directory does trigger a flush."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer = Mock()
+                mock_timer_cls.return_value = mock_timer
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                handler.on_modified(self._make_event("/vault/sub/note.md"))
+
+                assert "/vault/sub/note.md" in handler._pending
+                mock_timer_cls.assert_called_once()
