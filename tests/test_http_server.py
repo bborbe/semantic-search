@@ -165,14 +165,22 @@ class TestSearchEndpoint:
     def test_search_returns_503_when_not_ready(self) -> None:
         """While the index is still building, /search returns 503 with a
         Retry-After header — not a 500 and not a hang."""
+        from unittest.mock import patch
+
         import semantic_search.http_server as http_server
 
         original_event = http_server._indexer_ready
         original_indexer = http_server._indexer
+
+        async def never_completes() -> None:
+            await asyncio.Event().wait()
+
         try:
             http_server._indexer_ready = asyncio.Event()  # unset
             http_server._indexer = None
-            with TestClient(build_app()) as client:
+            with patch.object(
+                http_server, "_build_indexer_in_background", side_effect=never_completes
+            ), TestClient(build_app()) as client:
                 resp = client.get("/search?q=hello")
         finally:
             http_server._indexer_ready = original_event

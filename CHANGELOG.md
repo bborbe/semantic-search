@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.3
+
+- fix: HTTP server test suite — prevent background indexer build from overwriting mocked state. `_build_indexer_in_background` now skips when `_indexer_ready` is already set, and the 503-not-ready test patches the build coroutine so the race that caused 7 test failures in CI is eliminated.
+- chore: ignore `/.dark-factory.log`
+
 ## v0.8.2
 
 - fix: Disable `tqdm` progress bar in `sentence-transformers` encode calls — eliminates `'tqdm' object has no attribute 'sp'` race condition that occurred when the watcher thread and HTTP search handler called `model.encode()` concurrently. 153 production errors pre-v0.8.1; residual risk during cold-start rebuild / tombstone compaction now eliminated.

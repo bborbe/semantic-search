@@ -46,6 +46,8 @@ async def _build_indexer_in_background() -> None:
     immediately while the (slow, blocking) initial embedding pass runs.
     """
     global _indexer, _indexer_error
+    if _indexer_ready.is_set():
+        return
     logger.info(f"Indexer build starting in background for paths: {CONTENT_PATHS}")
     try:
         _indexer = await asyncio.to_thread(create_indexer, CONTENT_PATHS)
