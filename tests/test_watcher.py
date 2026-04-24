@@ -184,6 +184,37 @@ class TestVaultEventHandlerDebounce:
             assert len(handler._pending) == 0
             assert len(handler._pending_deletes) == 0
 
+    def test_flush_after_move_event_calls_remove_then_add(self, temp_vault: Path) -> None:
+        """End-to-end: an on_moved event between two indexable paths must result in
+        _flush calling remove_file_from_index for src then add_file_to_index for dest.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+            indexer = VaultIndexer(str(temp_vault))
+            handler = _VaultEventHandler(indexer)
+
+            # Simulate the queues populated by a successful on_moved
+            handler._pending_deletes.add("/vault/old.md")
+            handler._pending["/vault/new.md"] = 1.0
+
+            call_order: list[str] = []
+            indexer.add_file_to_index = lambda p: call_order.append(  # type: ignore[assignment,method-assign]
+                f"add:{p}"
+            )
+            indexer.remove_file_from_index = lambda p: call_order.append(  # type: ignore[assignment,method-assign]
+                f"remove:{p}"
+            )
+
+            handler._flush()
+
+            assert call_order == ["remove:/vault/old.md", "add:/vault/new.md"]
+            assert len(handler._pending) == 0
+            assert len(handler._pending_deletes) == 0
+
     def test_flush_delete_calls_remove_not_add(self, temp_vault: Path) -> None:
         """on_deleted → _flush must call remove_file_from_index, not add_file_to_index."""
         with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
@@ -284,4 +315,202 @@ class TestVaultEventHandlerFiltering:
                 handler.on_modified(self._make_event("/vault/sub/note.md"))
 
                 assert "/vault/sub/note.md" in handler._pending
+                mock_timer_cls.assert_called_once()
+
+
+class TestVaultEventHandlerMoves:
+    """Tests for on_moved (rename / atomic-replace) handling.
+
+    Obsidian and obsidian-git write files via temp-file + rename. Without
+    on_moved support the index silently decays — the destination .md file
+    never gets re-indexed.
+    """
+
+    def _make_move_event(self, src_path: str, dest_path: str, is_directory: bool = False) -> Mock:
+        event = Mock()
+        event.src_path = src_path
+        event.dest_path = dest_path
+        event.is_directory = is_directory
+        return event
+
+    def test_atomic_replace_dotfile_to_real_indexes_dest(self, temp_vault: Path) -> None:
+        """The Obsidian / obsidian-git case: rename `.tempfile.md` → `file.md`
+        must add `file.md` to _pending.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/.note.md.tmp",
+                    dest_path="/vault/note.md",
+                )
+                handler.on_moved(event)
+
+                assert "/vault/note.md" in handler._pending
+                assert "/vault/.note.md.tmp" not in handler._pending_deletes
+                mock_timer_cls.assert_called_once()
+
+    def test_rename_real_to_real_deletes_src_and_indexes_dest(self, temp_vault: Path) -> None:
+        """Renaming `a.md` → `b.md` must delete `a.md` and add `b.md`.
+
+        _flush already processes deletes before adds.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/a.md",
+                    dest_path="/vault/b.md",
+                )
+                handler.on_moved(event)
+
+                assert "/vault/a.md" in handler._pending_deletes
+                assert "/vault/b.md" in handler._pending
+                mock_timer_cls.assert_called_once()
+
+    def test_rename_real_to_dotfile_only_deletes_src(self, temp_vault: Path) -> None:
+        """Renaming `note.md` → `.note.md.tmp` (rare backup pattern) must delete
+        `note.md` and NOT add the dotfile destination.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/note.md",
+                    dest_path="/vault/.note.md.tmp",
+                )
+                handler.on_moved(event)
+
+                assert "/vault/note.md" in handler._pending_deletes
+                assert "/vault/.note.md.tmp" not in handler._pending
+                mock_timer_cls.assert_called_once()
+
+    def test_rename_dotfile_to_dotfile_is_ignored(self, temp_vault: Path) -> None:
+        """Both endpoints non-indexable (e.g. `.git/index.lock` → `.git/index`)
+        must not schedule a flush.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/.git/index.lock",
+                    dest_path="/vault/.git/index",
+                )
+                handler.on_moved(event)
+
+                assert len(handler._pending) == 0
+                assert len(handler._pending_deletes) == 0
+                mock_timer_cls.assert_not_called()
+
+    def test_rename_non_md_files_is_ignored(self, temp_vault: Path) -> None:
+        """Both endpoints non-md (e.g. `a.txt` → `b.txt`) must not schedule a flush."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/a.txt",
+                    dest_path="/vault/b.txt",
+                )
+                handler.on_moved(event)
+
+                assert len(handler._pending) == 0
+                assert len(handler._pending_deletes) == 0
+                mock_timer_cls.assert_not_called()
+
+    def test_directory_move_is_ignored(self, temp_vault: Path) -> None:
+        """Directory rename events (is_directory=True) must short-circuit."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = self._make_move_event(
+                    src_path="/vault/notes",
+                    dest_path="/vault/notes-renamed",
+                    is_directory=True,
+                )
+                handler.on_moved(event)
+
+                assert len(handler._pending) == 0
+                assert len(handler._pending_deletes) == 0
+                mock_timer_cls.assert_not_called()
+
+    def test_move_event_without_dest_path_treated_as_delete(self, temp_vault: Path) -> None:
+        """If dest_path is missing (defensive — should never happen with watchdog),
+        treat the event as a delete of the indexable src_path.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(temp_vault))
+                handler = _VaultEventHandler(indexer)
+
+                event = Mock()
+                event.src_path = "/vault/note.md"
+                event.is_directory = False
+                # Explicitly remove dest_path so getattr returns None
+                del event.dest_path
+
+                handler.on_moved(event)
+
+                assert "/vault/note.md" in handler._pending_deletes
+                assert len(handler._pending) == 0
                 mock_timer_cls.assert_called_once()

@@ -485,20 +485,32 @@ class _VaultEventHandler(FileSystemEventHandler):
         self._debounce_timer.start()
 
     @staticmethod
+    def _is_path_indexable(path: str) -> bool:
+        """Return True iff this path should trigger an incremental update.
+
+        Rejects:
+        - paths that do not end with .md
+        - paths containing any dotfile segment (.git, .obsidian, .semantic-search,
+          .DS_Store, .tempfile, etc.)
+        """
+        p = Path(path)
+        if p.suffix != ".md":
+            return False
+        return not any(part.startswith(".") for part in p.parts)
+
+    @staticmethod
     def _is_indexable_event(event: FileSystemEvent) -> bool:
         """Return True iff this event should trigger an incremental update.
 
         Rejects:
         - directory events
         - paths that do not end with .md
-        - paths containing any dotfile segment (.git, .obsidian, .semantic-search, .DS_Store, etc.)
+        - paths containing any dotfile segment (.git, .obsidian, .semantic-search,
+          .DS_Store, etc.)
         """
         if event.is_directory:
             return False
-        path = Path(str(event.src_path))
-        if path.suffix != ".md":
-            return False
-        return not any(part.startswith(".") for part in path.parts)
+        return _VaultEventHandler._is_path_indexable(str(event.src_path))
 
     def _flush(self) -> None:
         """Process all pending changes incrementally (no full rebuild)."""
@@ -544,4 +556,35 @@ class _VaultEventHandler(FileSystemEventHandler):
             return
         with self._lock:
             self._pending_deletes.add(str(event.src_path))
+            self._schedule_flush()
+
+    def on_moved(self, event: FileSystemEvent) -> None:
+        """Handle file rename / move.
+
+        Watchdog delivers ``FileMovedEvent`` to this method. The base class
+        ``FileSystemEventHandler.on_moved`` is a no-op, so without this override
+        atomic-replace writes (Obsidian, obsidian-git) silently drop their
+        indexable destinations and the index decays.
+
+        Routes the event through the same _pending / _pending_deletes queues
+        as create / delete so the existing _flush logic handles the work.
+        """
+        if event.is_directory:
+            return
+
+        src_path = str(event.src_path)
+        dest_path_attr = getattr(event, "dest_path", None)
+        dest_path = str(dest_path_attr) if dest_path_attr is not None else None
+
+        src_indexable = self._is_path_indexable(src_path)
+        dest_indexable = dest_path is not None and self._is_path_indexable(dest_path)
+
+        if not src_indexable and not dest_indexable:
+            return
+
+        with self._lock:
+            if src_indexable:
+                self._pending_deletes.add(src_path)
+            if dest_indexable and dest_path is not None:
+                self._pending[dest_path] = time.time()
             self._schedule_flush()

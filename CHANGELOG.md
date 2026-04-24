@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.4
+
+- fix: Implement `on_moved` in `_VaultEventHandler` so atomic-replace writes (Obsidian, obsidian-git) keep files in the index. Without this, every Obsidian save silently dropped the file from the index because the rename phase was unhandled.
+- fix: Extract `_is_path_indexable` helper so the `.md` + dotfile-segment filter applies symmetrically to both source and destination paths in move events.
+
 ## v0.8.3
 
 - fix: HTTP server test suite — prevent background indexer build from overwriting mocked state. `_build_indexer_in_background` now skips when `_indexer_ready` is already set, and the 503-not-ready test patches the build coroutine so the race that caused 7 test failures in CI is eliminated.

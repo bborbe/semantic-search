@@ -178,9 +178,12 @@ class TestSearchEndpoint:
         try:
             http_server._indexer_ready = asyncio.Event()  # unset
             http_server._indexer = None
-            with patch.object(
-                http_server, "_build_indexer_in_background", side_effect=never_completes
-            ), TestClient(build_app()) as client:
+            with (
+                patch.object(
+                    http_server, "_build_indexer_in_background", side_effect=never_completes
+                ),
+                TestClient(build_app()) as client,
+            ):
                 resp = client.get("/search?q=hello")
         finally:
             http_server._indexer_ready = original_event
