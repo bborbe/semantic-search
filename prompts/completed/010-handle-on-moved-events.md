@@ -1,11 +1,12 @@
 ---
-status: committing
+status: completed
 summary: Implemented on_moved in _VaultEventHandler with _is_path_indexable helper so atomic-replace writes (Obsidian, obsidian-git) correctly keep files in the index via the debounced pending queues.
 container: semantic-search-010-handle-on-moved-events
 dark-factory-version: v0.132.0
 created: "2026-04-24T11:06:46Z"
 queued: "2026-04-24T11:12:04Z"
 started: "2026-04-24T11:14:03Z"
+completed: "2026-04-24T11:17:23Z"
 ---
 
 <summary>
