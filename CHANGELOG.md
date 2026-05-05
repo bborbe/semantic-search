@@ -8,6 +8,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.10.2
+
+- feat: `/semantic-search:configure` auto-suggests `max(existing port) + 1` when adding a new instance, instead of starting at 8321 and prompting on conflict. Reconfigure path reuses the existing port by default.
+- docs: Explicit "each instance MUST bind a unique port" note in the multi-instance sections of `docs/launchd-service.md` and `docs/systemd-user-service.md` — TCP can't be shared, so two plists/units on the same port cause one to restart in a loop.
+
 ## v0.10.1
 
 - chore: Replace domain-specific examples with generic placeholders (`work`, `kubernetes deployment`, `project`) across docs, CLI help text, indexer comments, and tests. Repo is public — examples should be domain-neutral.

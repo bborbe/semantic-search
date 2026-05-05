@@ -81,10 +81,18 @@ Capture the absolute binary path for Step 3.
 
 ### Step 3: Collect configuration
 
+**Compute default port:**
+
+- **Greenfield (no existing instances)** → default `8321`.
+- **"Add another instance" path** → scan ports of all existing semantic-search-http instances (from Step 0) and propose `max(existing) + 1`. Each instance MUST have a unique port (TCP can't be shared).
+- **"Reconfigure" path** → reuse the existing instance's current port unless the user wants to change it.
+
+Then probe the chosen default with `lsof -i :<port>` (macOS) / `ss -ltnp | grep <port>` (Linux). If occupied by a non-semantic-search process, increment until a free port is found.
+
 Use AskUserQuestion to collect (in one batch):
 
 1. **Instance label** (default empty) — used as plist/unit suffix. Empty → `com.github.bborbe.semantic-search-http`. Set to e.g. `personal` → `com.github.bborbe.semantic-search-http-personal`. Required when adding a second instance.
-2. **Port** (default `8321`) — pre-flight probes; if occupied by another process, propose next free port.
+2. **Port** (default computed above) — confirm or change.
 3. **CONTENT_PATH** — comma-separated absolute paths. Default suggestions if `~/Documents/Obsidian/` exists.
 
 Validate each directory exists. List missing ones and ask for correction.

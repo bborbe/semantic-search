@@ -190,6 +190,8 @@ Naming pattern:
 
 Each instance gets its own unit file, port, `CONTENT_PATH`, and MCP config entry.
 
+**Each instance MUST bind a unique port.** TCP ports cannot be shared, so if two units try to bind 8321 only one wins and the other restarts in a loop. Convention: increment the port for each new instance (8321, 8322, 8323, …).
+
 Example Claude MCP config for two instances:
 
 ```json

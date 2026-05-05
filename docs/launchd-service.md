@@ -185,6 +185,8 @@ Each instance gets:
 - Its own `Label`, `Port`, `CONTENT_PATH`, and `StandardOutPath`
 - Its own MCP config entry pointing at the matching port
 
+**Each instance MUST bind a unique port.** TCP ports cannot be shared, so if two plists try to bind 8321 only one wins and the other restarts in a loop. Convention: increment the port for each new instance (8321, 8322, 8323, …).
+
 Example Claude MCP config for two instances:
 
 ```json
