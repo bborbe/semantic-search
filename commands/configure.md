@@ -56,7 +56,7 @@ uname -s
 - `Linux` → Linux, use systemd-user flow (Step 3b)
 - Other → STOP, report unsupported platform
 
-### Step 2: Verify or install the binary
+### Step 2: Verify, install, or upgrade the binary
 
 Check if the binary exists:
 
@@ -64,7 +64,9 @@ Check if the binary exists:
 command -v semantic-search-http || echo "MISSING"
 ```
 
-If missing, ask the user (single yes/no):
+#### 2a: Missing → install
+
+If missing, ask (single yes/no):
 
 > `semantic-search-http` not found. Install now via `uv tool install` (CPU-only)?
 
@@ -76,6 +78,35 @@ uv tool install --index https://download.pytorch.org/whl/cpu \
 ```
 
 Re-check `command -v semantic-search-http`. If still missing, STOP and surface the install error.
+
+#### 2b: Present → check for updates
+
+If the binary is already installed, compare installed vs. latest:
+
+```bash
+# Installed version (from uv)
+INSTALLED=$(uv tool list 2>/dev/null | awk '/^semantic-search v/ {print $2}')
+
+# Latest GitHub release tag (best-effort, skip if API unreachable)
+LATEST=$(curl -fsS --max-time 5 https://api.github.com/repos/bborbe/semantic-search/releases/latest 2>/dev/null | jq -r '.tag_name // empty')
+```
+
+If `LATEST` is non-empty and `INSTALLED != LATEST`, ask (single yes/no):
+
+> `semantic-search` is at `<INSTALLED>`, latest is `<LATEST>`. Upgrade now?
+
+If yes, run:
+
+```bash
+uv tool upgrade semantic-search
+```
+
+Then restart any running services so they pick up the new binary:
+
+- macOS: `launchctl unload <plist> && launchctl load <plist>` (per instance)
+- Linux: `systemctl --user restart <unit>` (per instance)
+
+If `LATEST` is empty (no internet, rate-limited, no releases) → skip the version check silently.
 
 Capture the absolute binary path for Step 3.
 

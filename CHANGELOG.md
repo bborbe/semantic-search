@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.10.3
+
+- feat: `/semantic-search:configure` now compares installed vs. latest version (`uv tool list` vs. GitHub releases API) and offers `uv tool upgrade semantic-search` when out of date. Includes restart hints for any running launchd/systemd instances so they pick up the new binary. Skips silently if the GitHub API is unreachable.
+
 ## v0.10.2
 
 - feat: `/semantic-search:configure` auto-suggests `max(existing port) + 1` when adding a new instance, instead of starting at 8321 and prompting on conflict. Reconfigure path reuses the existing port by default.
