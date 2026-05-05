@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.9.1
+
+- feat: `/semantic-search:search` and `/semantic-search:research` now try the MCP tool first and fall back to the REST endpoint (`http://127.0.0.1:8321/search`) when MCP is unavailable. Useful before `/semantic-search:configure` registers MCP, or when MCP config is broken but the HTTP service is up. Override the URL with `SEMANTIC_SEARCH_URL`.
+
 ## v0.9.0
 
 - feat: Package as Claude Code marketplace plugin. Adds `.claude-plugin/{plugin,marketplace}.json` and three commands: `/semantic-search:configure` (interactive launchd/systemd-user setup + MCP registration), `/semantic-search:search` (wraps `search_related`), `/semantic-search:research` (multi-step synthesis across results). Install via `claude plugin marketplace add bborbe/semantic-search && claude plugin install semantic-search`.

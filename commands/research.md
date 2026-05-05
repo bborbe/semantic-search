@@ -1,7 +1,7 @@
 ---
-allowed-tools: mcp__semantic-search__search_related, Read, Grep, Glob
+allowed-tools: mcp__semantic-search__search_related, Bash, Read, Grep, Glob
 argument-hint: <topic>
-description: Multi-step research over indexed markdown — semantic search, read top files, synthesize findings
+description: Multi-step research over indexed markdown — semantic search (MCP or REST), read top files, synthesize findings
 ---
 
 ## Usage
@@ -19,15 +19,26 @@ If no topic provided, show usage and STOP.
 
 ### Step 2: Initial semantic search
 
+**Try MCP first:**
+
 ```
 mcp__semantic-search__search_related(query=<topic>, top_k=10)
 ```
 
-If the MCP server is unavailable, fall back to:
+**Fall back to REST** if MCP is unavailable or errors:
+
+```bash
+SEMANTIC_SEARCH_URL="${SEMANTIC_SEARCH_URL:-http://127.0.0.1:8321}"
+curl -fsS --max-time 10 "${SEMANTIC_SEARCH_URL}/search?q=$(printf %s "<topic>" | jq -sRr @uri)&top_k=10"
+```
+
+**Last resort** if both fail:
 
 ```
 Grep pattern="<topic keywords>" path=<content roots> -i --files-with-matches
 ```
+
+Note in the final report which transport was used (MCP / REST / Grep).
 
 ### Step 3: Categorize results
 
@@ -43,7 +54,7 @@ Read the top 3–5 most relevant files (skip duplicates of the same concept). Us
 
 ### Step 5: Optional follow-up searches
 
-If the initial query has obvious related terms surfaced in step 4 (synonyms, related concepts), run 1–2 targeted follow-up `search_related` calls to fill gaps. Cap total searches at 3.
+If the initial query has obvious related terms surfaced in step 4 (synonyms, related concepts), run 1–2 targeted follow-up `search_related` (or REST `/search`) calls to fill gaps. Cap total searches at 3.
 
 ### Step 6: Synthesize findings
 
@@ -65,6 +76,8 @@ Output a single concise report:
 
 ## Confidence
 High / Medium / Low — <one-line reason>
+
+Source: MCP   |   Source: REST (http://127.0.0.1:8321)   |   Source: Grep fallback
 ```
 
 ## Notes
@@ -73,3 +86,5 @@ High / Medium / Low — <one-line reason>
 - If the topic spans multiple distinct concepts, surface that and ask the user to narrow.
 - Prefer guides over daily notes when both surface for the same concept.
 - For tasks that are mostly "find one specific file", use `/semantic-search:search` instead — `research` is for synthesis across multiple sources.
+- Override the REST URL with `SEMANTIC_SEARCH_URL` if your service runs on a non-default host/port.
+- Both MCP and REST hit the same warm indexer when the HTTP service is running.
