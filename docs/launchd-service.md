@@ -165,6 +165,58 @@ launchctl unload ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.p
 launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist
 ```
 
+## Multi-instance setup
+
+Run multiple `semantic-search-http` instances side-by-side — typically one per logical content domain (e.g. personal vault vs. work vault) — by adding a label suffix and assigning a distinct port to each.
+
+Naming pattern:
+
+| Component | Default | With suffix `personal` |
+|-----------|---------|------------------------|
+| Plist file | `com.github.bborbe.semantic-search-http.plist` | `com.github.bborbe.semantic-search-http-personal.plist` |
+| `Label` key | `com.github.bborbe.semantic-search-http` | `com.github.bborbe.semantic-search-http-personal` |
+| Log path | `/tmp/semantic-search-http.log` | `/tmp/semantic-search-http-personal.log` |
+| Port | `8321` | e.g. `8322` |
+| MCP server name | `semantic-search` | `semantic-search-personal` |
+
+Each instance gets:
+
+- Its own plist file in `~/Library/LaunchAgents/`
+- Its own `Label`, `Port`, `CONTENT_PATH`, and `StandardOutPath`
+- Its own MCP config entry pointing at the matching port
+
+Example Claude MCP config for two instances:
+
+```json
+{
+  "mcpServers": {
+    "semantic-search-personal": {
+      "type": "http",
+      "url": "http://127.0.0.1:8321/mcp"
+    },
+    "semantic-search-seibert": {
+      "type": "http",
+      "url": "http://127.0.0.1:8322/mcp"
+    }
+  }
+}
+```
+
+Load each plist independently:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http-personal.plist
+launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http-seibert.plist
+```
+
+Verify:
+
+```bash
+launchctl list | grep semantic-search-http
+```
+
+`/semantic-search:configure` handles the label suffix when you choose "Add another instance" in its pre-flight prompt.
+
 ## Troubleshooting
 
 ### Service keeps restarting (non-zero exit in `launchctl list`)

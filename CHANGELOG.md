@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.10.0
+
+- feat: `/semantic-search:configure` now does pre-flight detection (probes `/health`, lists existing launchd/systemd units, reads existing MCP registration) and offers Skip / Add-another-instance / Reconfigure paths instead of blindly writing a new plist.
+- feat: Multi-instance support — `/configure` accepts an instance label (e.g. `personal`, `work`) that becomes the plist/unit suffix and the MCP server name suffix, so multiple `semantic-search-http` services can run side-by-side on different ports for different content domains.
+- docs: Added "Multi-instance setup" sections to `docs/launchd-service.md` and `docs/systemd-user-service.md` documenting the label/port/MCP-name pattern.
+
 ## v0.9.1
 
 - feat: `/semantic-search:search` and `/semantic-search:research` now try the MCP tool first and fall back to the REST endpoint (`http://127.0.0.1:8321/search`) when MCP is unavailable. Useful before `/semantic-search:configure` registers MCP, or when MCP config is broken but the HTTP service is up. Override the URL with `SEMANTIC_SEARCH_URL`.

@@ -7,11 +7,44 @@ description: Configure semantic-search HTTP service (launchd on macOS, systemd-u
 
 Walk the user through installing `semantic-search-http` as a background service so every Claude Code session shares one warm indexer. Covers:
 
-1. Tool install via `uv tool install`
-2. Service unit creation (launchd on macOS, systemd-user on Linux)
-3. MCP registration in Claude config
+1. Pre-flight — detect existing instances, skip or add more
+2. Tool install via `uv tool install`
+3. Service unit creation (launchd on macOS, systemd-user on Linux), with optional instance label for multi-instance setups
+4. MCP registration in Claude config
 
 ## Process
+
+### Step 0: Pre-flight detection
+
+Probe for an existing service:
+
+```bash
+curl -fsS --max-time 3 http://127.0.0.1:8321/health 2>/dev/null
+```
+
+If it returns `{"status":"ok",...}`, list existing service units:
+
+- macOS: `launchctl list | grep semantic-search-http`
+- Linux: `systemctl --user list-units 'semantic-search-http*' --no-legend`
+
+Also check current MCP registration:
+
+```bash
+jq '.mcpServers | to_entries[] | select(.key | test("semantic"))' ~/.claude/mcp-personal.json ~/.claude.json 2>/dev/null
+```
+
+Report findings, then ask (single AskUserQuestion):
+
+> A semantic-search-http service is already running on port 8321 (instances: <list>). What would you like to do?
+> 1. Skip — already configured
+> 2. Add another instance (different port + label)
+> 3. Reconfigure existing instance
+
+- **1 (skip)** → STOP with summary
+- **2 (add instance)** → continue with Step 2; in Step 3 ask for instance label + alternative port
+- **3 (reconfigure)** → continue with Step 2, reuse the existing label, propose unloading old plist before writing new
+
+If no service is running, continue normally with Step 2.
 
 ### Step 1: Detect platform
 
@@ -46,53 +79,64 @@ Re-check `command -v semantic-search-http`. If still missing, STOP and surface t
 
 Capture the absolute binary path for Step 3.
 
-### Step 3: Ask for CONTENT_PATH
+### Step 3: Collect configuration
 
-Use AskUserQuestion to collect the content directories. Default suggestions if user has known vaults (check `~/Documents/Obsidian/`):
+Use AskUserQuestion to collect (in one batch):
 
-> Which directories should be indexed? (comma-separated, absolute paths)
+1. **Instance label** (default empty) — used as plist/unit suffix. Empty → `com.github.bborbe.semantic-search-http`. Set to e.g. `personal` → `com.github.bborbe.semantic-search-http-personal`. Required when adding a second instance.
+2. **Port** (default `8321`) — pre-flight probes; if occupied by another process, propose next free port.
+3. **CONTENT_PATH** — comma-separated absolute paths. Default suggestions if `~/Documents/Obsidian/` exists.
 
-Validate each directory exists. If any are missing, list them and ask the user to confirm or correct.
+Validate each directory exists. List missing ones and ask for correction.
 
 ### Step 3a: macOS (launchd)
 
-Reference: `docs/launchd-service.md` in the plugin repo.
+Reference: `docs/launchd-service.md` (see "Multi-instance" section for label pattern).
 
-1. Confirm port (default `8321`); check `lsof -i :8321` — if occupied, ask for an alternative.
-2. Create `~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist` from the template in `docs/launchd-service.md`, substituting:
+1. Build plist label: `com.github.bborbe.semantic-search-http[-<label>]`
+2. Plist path: `~/Library/LaunchAgents/<label>.plist`
+3. Probe port: `lsof -i :<port>` — if occupied by a non-semantic-search process, ask for an alternative.
+4. Render plist from the template in `docs/launchd-service.md`, substituting:
+   - `Label` → full label from step 1
    - Binary path (from Step 2)
    - `CONTENT_PATH` (from Step 3, comma-separated, absolute paths — launchd does not expand `~`)
    - Port
-3. Show the rendered plist to the user and ask for confirmation before writing.
-4. Load: `launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist`
-5. Verify: `launchctl list | grep semantic-search-http` — status column should be `0` or `-`.
-6. Health check (allow up to 30s for first-run model download):
+   - `StandardOutPath` / `StandardErrorPath` → `/tmp/<label>.log`
+5. Show the rendered plist to the user and ask for confirmation before writing.
+6. If reconfigure path: `launchctl unload <existing-plist>` first.
+7. Load: `launchctl load ~/Library/LaunchAgents/<label>.plist`
+8. Verify: `launchctl list | grep <label>` — status column should be `0` or `-`.
+9. Health check (allow up to 30s for first-run model download):
    ```bash
-   curl -s http://127.0.0.1:8321/health
+   curl -s http://127.0.0.1:<port>/health
    ```
 
 ### Step 3b: Linux (systemd-user)
 
-Reference: `docs/systemd-user-service.md` in the plugin repo.
+Reference: `docs/systemd-user-service.md`.
 
-1. Confirm port (default `8321`); check `ss -ltnp | grep 8321` — if occupied, ask for an alternative.
-2. Create `~/.config/systemd/user/semantic-search-http.service` from the template in `docs/systemd-user-service.md`, substituting:
+1. Build unit name: `semantic-search-http[-<label>].service`
+2. Unit path: `~/.config/systemd/user/<unit>`
+3. Probe port: `ss -ltnp | grep <port>` — if occupied, ask for alternative.
+4. Render unit from the template in `docs/systemd-user-service.md`, substituting:
+   - `Description` includes label
    - Binary path (use `%h/.local/bin/semantic-search-http` if installed via `uv tool install`)
    - `CONTENT_PATH` (use `%h` for home dir where appropriate)
    - Port
-3. Show the rendered unit file and ask for confirmation before writing.
-4. Reload + enable:
+5. Show the rendered unit file and ask for confirmation before writing.
+6. If reconfigure path: `systemctl --user stop <old-unit>` first.
+7. Reload + enable:
    ```bash
    systemctl --user daemon-reload
-   systemctl --user enable --now semantic-search-http.service
+   systemctl --user enable --now <unit>
    ```
-5. Optionally enable lingering (ask user):
+8. Optionally enable lingering (ask user):
    ```bash
    sudo loginctl enable-linger "$USER"
    ```
-6. Health check:
+9. Health check:
    ```bash
-   curl -s http://127.0.0.1:8321/health
+   curl -s http://127.0.0.1:<port>/health
    ```
 
 ### Step 4: Register MCP in Claude Code
@@ -104,18 +148,20 @@ Locate the user's MCP config file. Common locations (in priority order):
 
 Ask the user which config to update if multiple exist.
 
-Read the existing file. Add or update the `mcpServers.semantic-search` entry:
+MCP server name: `semantic-search[-<label>]`. Read the existing file. Add or update:
 
 ```json
 {
   "mcpServers": {
-    "semantic-search": {
+    "semantic-search-<label>": {
       "type": "http",
       "url": "http://127.0.0.1:<PORT>/mcp"
     }
   }
 }
 ```
+
+(No suffix when label is empty.)
 
 Show the diff before writing.
 
@@ -124,10 +170,10 @@ Show the diff before writing.
 Report:
 
 ```
-✅ semantic-search-http running on port <PORT>
+✅ semantic-search-http[-<label>] running on port <PORT>
 ✅ Indexing: <CONTENT_PATH>
 ✅ Health: <indexed_files> files indexed
-✅ MCP registered in <config_path>
+✅ MCP registered as 'semantic-search[-<label>]' in <config_path>
 
 Restart Claude Code to pick up the new MCP server.
 ```
@@ -135,12 +181,12 @@ Restart Claude Code to pick up the new MCP server.
 ## Failure Modes
 
 - **Binary install failed** → surface `uv` error, suggest `uv self update` or manual `pip install`
-- **Port in use** → list owner from `lsof`/`ss`, ask for alternative port
-- **Health check times out** → check service logs (`/tmp/semantic-search-http.log` on macOS, `journalctl --user -u semantic-search-http.service` on Linux)
+- **Port in use by non-semantic-search process** → list owner from `lsof`/`ss`, ask for alternative port
+- **Health check times out** → check service logs (`/tmp/<label>.log` on macOS, `journalctl --user -u <unit>` on Linux)
 - **MCP registration fails** → show the JSON snippet for manual paste
 
 ## Reference Docs
 
-- `docs/launchd-service.md` — full macOS guide
+- `docs/launchd-service.md` — full macOS guide, including multi-instance section
 - `docs/systemd-user-service.md` — full Linux guide
 - `README.md` — overview of `semantic-search-http` modes

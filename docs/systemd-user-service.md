@@ -176,6 +176,52 @@ uv tool upgrade semantic-search
 systemctl --user restart semantic-search-http.service
 ```
 
+## Multi-instance setup
+
+Run multiple `semantic-search-http` instances side-by-side — typically one per logical content domain (e.g. personal vault vs. work vault) — by adding a label suffix and assigning a distinct port to each.
+
+Naming pattern:
+
+| Component | Default | With suffix `personal` |
+|-----------|---------|------------------------|
+| Unit file | `semantic-search-http.service` | `semantic-search-http-personal.service` |
+| Port | `8321` | e.g. `8322` |
+| MCP server name | `semantic-search` | `semantic-search-personal` |
+
+Each instance gets its own unit file, port, `CONTENT_PATH`, and MCP config entry.
+
+Example Claude MCP config for two instances:
+
+```json
+{
+  "mcpServers": {
+    "semantic-search-personal": {
+      "type": "http",
+      "url": "http://127.0.0.1:8321/mcp"
+    },
+    "semantic-search-work": {
+      "type": "http",
+      "url": "http://127.0.0.1:8322/mcp"
+    }
+  }
+}
+```
+
+Enable each unit independently:
+
+```bash
+systemctl --user enable --now semantic-search-http-personal.service
+systemctl --user enable --now semantic-search-http-work.service
+```
+
+Verify:
+
+```bash
+systemctl --user list-units 'semantic-search-http*'
+```
+
+`/semantic-search:configure` handles the label suffix when you choose "Add another instance" in its pre-flight prompt.
+
 ## Troubleshooting
 
 ### Unit fails to start (`systemctl --user status` shows `failed`)
