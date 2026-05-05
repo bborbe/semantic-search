@@ -45,3 +45,4 @@ ENV/
 /.dark-factory.log
 /prompts/log
 /specs/log
+src/semantic_search/_version.py

@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.10.5
+
+- feat: Adopt `hatch-vcs` so the Python package version is derived from git tags. `pyproject.toml` no longer carries a manual `version` field — `git tag vX.Y.Z` is now the single source of truth. `__version__` reads from a generated `src/semantic_search/_version.py` (gitignored). No more drift between tag, package version, and what `uv tool list` reports.
+
 ## v0.10.4
 
 - fix: Bump `pyproject.toml` version from `0.6.2` (stale since 2025-09) to `0.10.4`. The Python package version was never bumped despite v0.7–v0.10 releases, so `uv tool list` reported `v0.6.2` regardless of which commit was installed — breaking the v0.10.3 outdated-binary detection in `/semantic-search:configure`. Going forward, plugin and Python package share a single version train.

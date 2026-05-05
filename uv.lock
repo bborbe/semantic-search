@@ -1517,7 +1517,6 @@ wheels = [
 
 [[package]]
 name = "semantic-search"
-version = "0.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "faiss-cpu" },
