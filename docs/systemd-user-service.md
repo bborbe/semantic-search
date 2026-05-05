@@ -55,7 +55,7 @@ After=default.target
 
 [Service]
 Type=simple
-Environment=CONTENT_PATH=%h/Documents/Obsidian/Personal,%h/Documents/Obsidian/Trading
+Environment=CONTENT_PATH=%h/Documents/Obsidian/Personal,%h/Documents/Obsidian/Work
 Environment=LOG_LEVEL=INFO
 ExecStart=%h/.local/bin/semantic-search-http --host 127.0.0.1 --port 8321
 Restart=on-failure

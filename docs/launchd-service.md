@@ -61,7 +61,7 @@ Create `~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist`:
     <key>EnvironmentVariables</key>
     <dict>
         <key>CONTENT_PATH</key>
-        <string>/Users/YOUR_USER/Documents/Obsidian/Personal,/Users/YOUR_USER/Documents/Obsidian/Trading</string>
+        <string>/Users/YOUR_USER/Documents/Obsidian/Personal,/Users/YOUR_USER/Documents/Obsidian/Work</string>
         <key>LOG_LEVEL</key>
         <string>INFO</string>
     </dict>
@@ -194,7 +194,7 @@ Example Claude MCP config for two instances:
       "type": "http",
       "url": "http://127.0.0.1:8321/mcp"
     },
-    "semantic-search-seibert": {
+    "semantic-search-work": {
       "type": "http",
       "url": "http://127.0.0.1:8322/mcp"
     }
@@ -206,7 +206,7 @@ Load each plist independently:
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http-personal.plist
-launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http-seibert.plist
+launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http-work.plist
 ```
 
 Verify:

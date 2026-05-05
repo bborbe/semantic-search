@@ -22,7 +22,7 @@ from watchdog.observers.api import BaseObserver
 
 logger = logging.getLogger(__name__)
 
-# Extract inline markdown tags: #trading, #EUR/USD
+# Extract inline markdown tags: #project, #team-a/sub
 INLINE_TAG_PATTERN = re.compile(r"(?<!\w)#([\w\-/]+)")
 
 
@@ -237,7 +237,7 @@ class VaultIndexer:
     def _extract_inline_tags(self, content: str) -> list[str]:
         """Extract inline #tags from markdown content.
 
-        Returns tags without # prefix (e.g., ["trading", "EUR/USD"])
+        Returns tags without # prefix (e.g., ["project", "team-a/sub"])
         """
         return INLINE_TAG_PATTERN.findall(content)
 

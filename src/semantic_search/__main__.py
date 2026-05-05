@@ -67,7 +67,7 @@ def _print_usage() -> None:
     print()
     print("Examples:")
     print("  semantic-search-mcp serve")
-    print("  semantic-search-mcp search trading strategy")
+    print("  semantic-search-mcp search kubernetes deployment")
     print("  semantic-search-mcp duplicates path/to/note.md")
     print()
     print("Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),")
@@ -120,7 +120,7 @@ def _print_cli_usage() -> None:
     print("  duplicates   Find duplicate notes (one-shot)")
     print()
     print("Examples:")
-    print("  semantic-search search trading strategy")
+    print("  semantic-search search kubernetes deployment")
     print("  semantic-search duplicates path/to/note.md")
 
 

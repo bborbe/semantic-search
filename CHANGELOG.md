@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.10.1
+
+- chore: Replace domain-specific examples with generic placeholders (`work`, `kubernetes deployment`, `project`) across docs, CLI help text, indexer comments, and tests. Repo is public — examples should be domain-neutral.
+
 ## v0.10.0
 
 - feat: `/semantic-search:configure` now does pre-flight detection (probes `/health`, lists existing launchd/systemd units, reads existing MCP registration) and offers Skip / Add-another-instance / Reconfigure paths instead of blindly writing a new plist.

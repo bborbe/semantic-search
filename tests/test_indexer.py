@@ -273,16 +273,16 @@ Content with #inline-tag
 
             test_file = vault / "test.md"
             test_file.write_text("""---
-tags: [Trading]
+tags: [Project]
 ---
-Content with #trading and #TRADING
+Content with #project and #PROJECT
 """)
 
             indexer = VaultIndexer(str(vault))
             weighted_text = indexer._prepare_text_for_embedding(test_file, test_file.read_text())
 
             # All variations should be present but deduplicated to lowercase
-            assert "trading" in weighted_text.lower()
+            assert "project" in weighted_text.lower()
             # Count occurrences (difficult due to weighting, so just verify present)
 
     def test_no_frontmatter_section(self, tmp_path: Path) -> None:
