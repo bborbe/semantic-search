@@ -95,6 +95,46 @@ curl 'http://127.0.0.1:8321/duplicates?file=notes/my-note.md'
 curl 'http://127.0.0.1:8321/health'
 ```
 
+## Claude Code Plugin
+
+This repo also ships as a Claude Code marketplace plugin with commands for setup, search, and research.
+
+### Install
+
+```bash
+claude plugin marketplace add bborbe/semantic-search
+claude plugin install semantic-search
+```
+
+### Update
+
+```bash
+claude plugin marketplace update semantic-search
+claude plugin update semantic-search@semantic-search
+```
+
+### Quick Start
+
+```bash
+# One-shot interactive setup: installs the binary, writes the launchd/systemd
+# unit, registers the MCP server in your Claude config.
+/semantic-search:configure
+
+# Search indexed markdown
+/semantic-search:search kubernetes deployment
+
+# Multi-step research across results
+/semantic-search:research kafka backup strategy
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/semantic-search:configure` | Install `semantic-search-http` as a launchd (macOS) or systemd-user (Linux) service and register the MCP server in Claude Code |
+| `/semantic-search:search <query> [top_k]` | Semantic search via the running MCP server |
+| `/semantic-search:research <topic>` | Multi-step research — search, categorize, read top sources, synthesize |
+
 ## Run in Background
 
 For production-style usage, run `semantic-search-http` as a background service so every Claude Code session (and any REST client) shares one warm process.

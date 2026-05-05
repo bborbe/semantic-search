@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.9.0
+
+- feat: Package as Claude Code marketplace plugin. Adds `.claude-plugin/{plugin,marketplace}.json` and three commands: `/semantic-search:configure` (interactive launchd/systemd-user setup + MCP registration), `/semantic-search:search` (wraps `search_related`), `/semantic-search:research` (multi-step synthesis across results). Install via `claude plugin marketplace add bborbe/semantic-search && claude plugin install semantic-search`.
+
 ## v0.8.4
 
 - fix: Implement `on_moved` in `_VaultEventHandler` so atomic-replace writes (Obsidian, obsidian-git) keep files in the index. Without this, every Obsidian save silently dropped the file from the index because the rename phase was unhandled.

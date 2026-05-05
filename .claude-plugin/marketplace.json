@@ -1,0 +1,19 @@
+{
+  "name": "semantic-search",
+  "owner": {
+    "name": "Benjamin Borbe"
+  },
+  "metadata": {
+    "description": "Semantic search over markdown files — MCP setup, search, and research commands",
+    "version": "0.9.0"
+  },
+  "plugins": [
+    {
+      "name": "semantic-search",
+      "description": "Semantic search over markdown files — MCP setup, search, and research commands",
+      "source": "./",
+      "version": "0.9.0",
+      "strict": true
+    }
+  ]
+}
