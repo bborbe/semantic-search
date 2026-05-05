@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+Please choose versions by [Semantic Versioning](http://semver.org/).
+
+* MAJOR version when you make incompatible API changes,
+* MINOR version when you add functionality in a backwards-compatible manner, and
+* PATCH version when you make backwards-compatible bug fixes.
+
 ## v0.9.1
 
 - feat: `/semantic-search:search` and `/semantic-search:research` now try the MCP tool first and fall back to the REST endpoint (`http://127.0.0.1:8321/search`) when MCP is unavailable. Useful before `/semantic-search:configure` registers MCP, or when MCP config is broken but the HTTP service is up. Override the URL with `SEMANTIC_SEARCH_URL`.
@@ -32,12 +38,6 @@ All notable changes to this project will be documented in this file.
 
 - feat: Move persistent index cache from OS temp directory to platformdirs user cache dir (macOS: ~/Library/Caches/semantic-search/, Linux: ~/.cache/semantic-search/, Windows: %LOCALAPPDATA%/semantic-search/Cache/). macOS no longer auto-cleans the cache.
 - feat: One-time best-effort migration of existing tempdir cache to the new user cache location on first startup — no forced re-embed for existing users.
-
-Please choose versions by [Semantic Versioning](http://semver.org/).
-
-* MAJOR version when you make incompatible API changes,
-* MINOR version when you add functionality in a backwards-compatible manner, and
-* PATCH version when you make backwards-compatible bug fixes.
 
 ## v0.7.1
 
