@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.11.0
+
+- feat: `/semantic-search:search` and `/semantic-search:research` now query every available semantic-search MCP instance and merge results by score. Add `--server=<label>` flag to scope to a single instance. Conventional labels (`personal`, `work`) listed in each command's `allowed-tools`; custom labels reach via REST fallback (port-scanning of running `semantic-search-http` services).
+- chore: extract `check-versions` to `scripts/check-versions.sh` (4-field locked check: CHANGELOG top + `plugin.json` + `marketplace.json` `metadata.version` + `plugins[0].version`); add `make check-versions` and `make release-check` (`precommit + check-versions`). Aligns with `dark-factory` / `vault-cli` / `coding` release-gate shape.
+- docs: add `docs/releasing-semantic-search.md` covering two-surface release model (Python pkg via `hatch-vcs` + plugin), version alignment, install gate, plugin release procedure.
+
 ## v0.10.5
 
 - feat: Adopt `hatch-vcs` so the Python package version is derived from git tags. `pyproject.toml` no longer carries a manual `version` field — `git tag vX.Y.Z` is now the single source of truth. `__version__` reads from a generated `src/semantic_search/_version.py` (gitignored). No more drift between tag, package version, and what `uv tool list` reports.

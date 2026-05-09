@@ -1,4 +1,4 @@
-.PHONY: install sync format lint typecheck check test precommit
+.PHONY: install sync format lint typecheck check test precommit check-versions release-check
 
 # Install dependencies (alias for sync)
 install: sync
@@ -24,3 +24,9 @@ test: sync
 
 precommit: sync format test check
 	@echo "✓ All precommit checks passed"
+
+check-versions:
+	@bash scripts/check-versions.sh
+
+release-check: precommit check-versions
+	@echo "ready to release"
