@@ -45,7 +45,7 @@ Spawns one process per Claude Code session. Simple, but each session loads its o
 claude mcp add -s project semantic-search \
   --env CONTENT_PATH=/path/to/vault \
   -- \
-  uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp
+  uvx --from git+https://github.com/bborbe/semantic-search semantic-search-mcp serve
 ```
 
 **Tools available:**

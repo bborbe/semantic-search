@@ -17,6 +17,16 @@ def main() -> None:
 
     try:
         if len(sys.argv) < 2:
+            print(
+                "Error: no subcommand given. Did you mean 'serve'?",
+                file=sys.stderr,
+            )
+            print(
+                "  When wired into Claude Code via 'claude mcp add', the command "
+                "must end with 'serve'.",
+                file=sys.stderr,
+            )
+            print(file=sys.stderr)
             _print_usage()
             sys.exit(1)
 
@@ -34,6 +44,8 @@ def main() -> None:
 
             duplicates()
         else:
+            print(f"Error: unknown subcommand '{cmd}'.", file=sys.stderr)
+            print(file=sys.stderr)
             _print_usage()
             sys.exit(1)
     except FileNotFoundError as e:
@@ -58,20 +70,20 @@ def _serve() -> None:
 
 
 def _print_usage() -> None:
-    print("Usage: semantic-search-mcp <command>")
-    print()
-    print("Commands:")
-    print("  serve        Start stdio MCP server (for Claude Code)")
-    print("  search       Search for related notes (one-shot)")
-    print("  duplicates   Find duplicate notes (one-shot)")
-    print()
-    print("Examples:")
-    print("  semantic-search-mcp serve")
-    print("  semantic-search-mcp search kubernetes deployment")
-    print("  semantic-search-mcp duplicates path/to/note.md")
-    print()
-    print("Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),")
-    print("use `semantic-search-http`. For one-shot CLI, use `semantic-search`.")
+    print("Usage: semantic-search-mcp <command>", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Commands:", file=sys.stderr)
+    print("  serve        Start stdio MCP server (for Claude Code)", file=sys.stderr)
+    print("  search       Search for related notes (one-shot)", file=sys.stderr)
+    print("  duplicates   Find duplicate notes (one-shot)", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Examples:", file=sys.stderr)
+    print("  semantic-search-mcp serve", file=sys.stderr)
+    print("  semantic-search-mcp search kubernetes deployment", file=sys.stderr)
+    print("  semantic-search-mcp duplicates path/to/note.md", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),", file=sys.stderr)
+    print("use `semantic-search-http`. For one-shot CLI, use `semantic-search`.", file=sys.stderr)
 
 
 def main_cli() -> None:
@@ -81,6 +93,8 @@ def main_cli() -> None:
 
     try:
         if len(sys.argv) < 2:
+            print("Error: no subcommand given.", file=sys.stderr)
+            print(file=sys.stderr)
             _print_cli_usage()
             sys.exit(1)
 
@@ -96,6 +110,8 @@ def main_cli() -> None:
 
             duplicates()
         else:
+            print(f"Error: unknown subcommand '{cmd}'.", file=sys.stderr)
+            print(file=sys.stderr)
             _print_cli_usage()
             sys.exit(1)
     except FileNotFoundError as e:
@@ -113,15 +129,15 @@ def main_cli() -> None:
 
 
 def _print_cli_usage() -> None:
-    print("Usage: semantic-search <command> [options]")
-    print()
-    print("Commands:")
-    print("  search       Search for related notes (one-shot)")
-    print("  duplicates   Find duplicate notes (one-shot)")
-    print()
-    print("Examples:")
-    print("  semantic-search search kubernetes deployment")
-    print("  semantic-search duplicates path/to/note.md")
+    print("Usage: semantic-search <command> [options]", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Commands:", file=sys.stderr)
+    print("  search       Search for related notes (one-shot)", file=sys.stderr)
+    print("  duplicates   Find duplicate notes (one-shot)", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Examples:", file=sys.stderr)
+    print("  semantic-search search kubernetes deployment", file=sys.stderr)
+    print("  semantic-search duplicates path/to/note.md", file=sys.stderr)
 
 
 if __name__ == "__main__":
