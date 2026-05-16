@@ -1,11 +1,12 @@
 ---
-status: committing
+status: completed
 summary: 'Changed stream=sys.stdout to stream=sys.stderr in logging_setup.py, added tests/test_logging_setup.py pinning the stderr routing, and inserted ## Unreleased entry in CHANGELOG.md.'
 container: semantic-search-011-fix-logging-stream-to-stderr
 dark-factory-version: v0.156.1-1-g04f3863-dirty
 created: "2026-05-16T11:19:00Z"
 queued: "2026-05-16T11:19:00Z"
 started: "2026-05-16T11:19:16Z"
+completed: "2026-05-16T11:21:38Z"
 ---
 <summary>
 - Logger output from the `semantic-search` binaries is routed to stderr instead of stdout
