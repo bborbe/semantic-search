@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.11.1
+
+- fix: route logger output to stderr (was stdout, corrupted stdio MCP protocol channel during serve mode)
+
 ## v0.11.0
 
 - feat: `/semantic-search:search` and `/semantic-search:research` now query every available semantic-search MCP instance and merge results by score. Add `--server=<label>` flag to scope to a single instance. Conventional labels (`personal`, `work`) listed in each command's `allowed-tools`; custom labels reach via REST fallback (port-scanning of running `semantic-search-http` services).

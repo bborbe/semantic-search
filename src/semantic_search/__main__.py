@@ -82,7 +82,9 @@ def _print_usage() -> None:
     print("  semantic-search-mcp search kubernetes deployment", file=sys.stderr)
     print("  semantic-search-mcp duplicates path/to/note.md", file=sys.stderr)
     print(file=sys.stderr)
-    print("Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),", file=sys.stderr)
+    print(
+        "Note: this binary runs stdio MCP only. For HTTP (REST + MCP-over-HTTP),", file=sys.stderr
+    )
     print("use `semantic-search-http`. For one-shot CLI, use `semantic-search`.", file=sys.stderr)
 
 

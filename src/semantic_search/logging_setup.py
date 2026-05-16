@@ -16,5 +16,5 @@ def configure_logging(level: str = "INFO") -> None:
         format="%(asctime)s %(levelname)-8s [%(name)s:%(lineno)d] %(message)s",
         level=log_level,
         datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
+        stream=sys.stderr,
     )
