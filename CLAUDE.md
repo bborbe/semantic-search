@@ -2,6 +2,12 @@
 
 Semantic search over markdown files — MCP + REST modes.
 
+## Release Checklist
+
+**Before `dark-factory prompt approve`**: walk `scenarios/` against the working tree. `autoRelease: true` is on — once a prompt with a `## Unreleased` entry is approved, the daemon tags and pushes. There is no second checkpoint.
+
+Skip the scenario gate only if `git diff $INSTALLED..HEAD --name-only` matches no `src/**.py | pyproject.toml | Makefile | tests/**.py` paths. See [docs/releasing-semantic-search.md](docs/releasing-semantic-search.md) for the full flow.
+
 ## Dark Factory Workflow
 
 **Never code directly.** All code changes go through the dark-factory pipeline.

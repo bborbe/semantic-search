@@ -28,22 +28,44 @@ The check is **release-time only** — `make precommit` does NOT run it. Run the
 
 **Why not in `precommit`**: every refactor commit would otherwise have to bump plugin JSONs in lockstep, burning release numbers on internal work. (Vault-cli learned this the hard way; we apply the same lesson here.)
 
-## The release gate (run BEFORE every tag or plugin bump)
+## The release gate (run BEFORE `dark-factory prompt approve`)
 
-`make precommit` is the available gate. It covers format + test + lint + typecheck on the Python package — but does **not** cover:
+`autoRelease: true` is on for this repo (`.dark-factory.yaml`). The daemon ships every approved prompt that adds a `## Unreleased` entry — there is **no second checkpoint** after approval. The operator checkpoint is **before approve**, not after merge.
 
-- Real MCP server behavior (fastmcp wire format)
-- Real REST server behavior (HTTP contract)
+`make precommit` is one part of the gate (format + test + lint + typecheck) but does **not** cover:
+
+- Real MCP server behavior (stdio framing, fastmcp wire format)
+- Real REST server behavior (HTTP contract, real socket bind)
 - Real launchd/systemd integration
 - The slash-command surfaces (`/semantic-search:search`, `:research`, `:configure`)
 
-Until a `scenarios/` regression suite exists, the operator must manually exercise:
+The `scenarios/` directory holds the regression suite that exercises these real-binary paths. Walk all `status: active` (and `draft`, if the prompt creates one) scenarios against the current source tree **before** approving the prompt:
 
-1. **MCP path:** restart Claude Code, run `/semantic-search:search "obsidian"` against a configured instance — must return results
-2. **REST path:** `curl http://127.0.0.1:8321/search?q=test&top_k=3` — must return JSON results
-3. **Configure path:** if `commands/configure.md` changed, walk a fresh install on a clean machine (or `~/.claude/mcp-*.json` snapshot)
+```bash
+ls scenarios/*.md
+# Walk each scenario's Setup → Action → Expected against the working tree.
+# Use `/dark-factory:run-scenario` to drive interactively, or execute by hand.
+```
 
-If any path fails, do **not** tag or bump plugin. Fix the regression first.
+Current scenarios:
+
+- `scenarios/001-mcp-stdio-no-stdout-pollution.md` — `semantic-search-mcp serve` keeps stdout clean, logs on stderr
+- `scenarios/002-http-rest-search-returns-json.md` — `semantic-search-http` binds a port and returns valid JSON
+- `scenarios/003-cli-search-prints-results.md` — `semantic-search search` one-shot returns results, exit 0
+
+If any scenario fails, do **not** approve the prompt. Reject, fix, re-audit. Once approved, the daemon ships whatever the agent produced — there is no rollback short of a follow-up release.
+
+### Empty-diff skip
+
+The one valid skip: nothing on the runtime surface changed since the installed binary.
+
+```bash
+INSTALLED=$(semantic-search --version | awk '{print $NF}')
+git diff "$INSTALLED"..HEAD --name-only | grep -E '^src/.*\.py$|^pyproject\.toml$|^Makefile$|^tests/.*\.py$'
+# empty output → installed binary is byte-equivalent to current source → skip the scenario gate
+```
+
+This is the ONLY documented skip. Doc-only / `scenarios/` / `prompts/` / `specs/` changes never reach a runtime artifact and don't need the gate. Do not invent other skips.
 
 ## Version alignment check (release-time)
 
@@ -61,33 +83,41 @@ The git tag is **not** checked here — `hatch-vcs` derives the Python package v
 
 **NOT wired into `make precommit`** — see the "Version alignment" section above for why.
 
-## Python package release (manual)
+## Python package release (automatic — operator owns the gate)
 
-There is **no** `autoRelease` daemon for semantic-search. Every Python release is a deliberate operator action.
+Semantic-search runs `dark-factory` against itself with `autoRelease: true` and a `CHANGELOG.md`. Every successful prompt that adds a `## Unreleased` entry produces a new `vX.Y.Z` tag and pushes it. There is **no manual binary release step**. The release is the side-effect of completing a prompt.
 
-1. **Land all changes** for the release on `master` via the dark-factory pipeline (per `CLAUDE.md` — never code directly).
-2. **Run `make precommit`** — must pass.
-3. **Run the release gate** above (manual MCP/REST exercise).
-4. **Edit `CHANGELOG.md`**: rename `## Unreleased` → `## vX.Y.Z` at the top, summarising every change since the previous tag (binary AND plugin in one section — there is one CHANGELOG).
-5. **Run `make check-versions`** — must report `✅ all four versions equal` (this implies plugin JSONs already bumped to match — see plugin release below).
-6. **Commit:** `git commit -am "release vX.Y.Z: <summary>"`.
-7. **Tag and push:**
+The operator's responsibility is to **run the release gate before approving any prompt** that may produce a binary change. Once the prompt is approved, the daemon ships whatever the agent produced — there is no second checkpoint.
 
-   ```bash
-   git tag vX.Y.Z
-   git push && git push --tags
-   ```
+### What autoRelease does
 
-8. **Verify:**
+After each successful prompt with `## Unreleased` content:
 
-   ```bash
-   git fetch --tags
-   git describe --tags --abbrev=0
-   uv tool upgrade semantic-search
-   semantic-search --version    # must equal vX.Y.Z
-   ```
+1. Stage all changes (including the agent's `## Unreleased` entry).
+2. Determine bump (patch/minor) from the changelog content.
+3. Rename `## Unreleased` → `## vX.Y.Z`.
+4. Commit `release vX.Y.Z`.
+5. Tag `vX.Y.Z`.
+6. `git push` + `git push origin vX.Y.Z`.
+7. Move the prompt file to `prompts/completed/` and push that commit too.
 
-`hatch-vcs` reads the tag at install time and writes it to `src/semantic_search/_version.py`. No `pyproject.toml` bump is ever needed.
+`hatch-vcs` derives `__version__` from the tag at install time → `uv tool upgrade semantic-search` picks up the new version on the next install. No `pyproject.toml` bump is ever needed.
+
+### Verifying a release shipped
+
+```bash
+git fetch --tags
+git describe --tags --abbrev=0                                # latest tag
+git log "$(git describe --tags --abbrev=0)"..HEAD --oneline   # any unpushed commits beyond it
+uv tool upgrade semantic-search
+semantic-search --version                                     # must match the tag
+```
+
+After a successful autoRelease, both `git status` (clean) and `git rev-list @{u}..HEAD --count` (zero) should hold.
+
+### When plugin JSONs need follow-up
+
+`autoRelease` bumps the **binary**. A prompt that touches `commands/`, `agents/`, `docs/`, or `skills/` is shipped as a binary tag but the **plugin** version in `.claude-plugin/*.json` does NOT auto-bump. After such a prompt completes, follow the [Plugin release](#plugin-release-manual) procedure manually to bring the three JSON fields up to the latest tag.
 
 ## Plugin release (manual)
 
