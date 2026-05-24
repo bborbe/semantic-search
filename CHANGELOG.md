@@ -8,6 +8,13 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.15.1
+
+- fix(indexer): `get_content` rejected valid paths whose vault root crossed a symlink (e.g. macOS `/tmp` → `/private/tmp`). The validator now resolves vault roots before the `is_relative_to` comparison.
+- test: add regression `test_unresolved_vault_path_with_symlink_root_accepted`; align `/content` 503 test with `/search` pattern (patch `_build_indexer_in_background`).
+- chore(scenarios): add `004-http-content-fetch-happy-path.md` and `005-http-content-fetch-error-responses.md` covering real-socket end-to-end coverage that `TestClient` cannot exercise.
+- chore: bump plugin JSONs (`.claude-plugin/plugin.json`, `marketplace.json`) from 0.11.0 to 0.15.1 to align with the binary version (catches up on docs changes shipped since v0.11.0).
+
 ## v0.15.0
 
 - feat: Add `get_content` MCP tool and `GET /content` REST endpoint for retrieving file content from indexed vaults. Supports full-file and query-focused snippet modes. Enables remote deployment of semantic-search clients without filesystem access to the vault directory.

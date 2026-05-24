@@ -1,7 +1,7 @@
 {
   "name": "semantic-search",
   "description": "Semantic search over markdown files — MCP setup, search, and research commands",
-  "version": "0.11.0",
+  "version": "0.15.1",
   "author": {
     "name": "Benjamin Borbe"
   },
