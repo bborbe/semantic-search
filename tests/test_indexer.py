@@ -693,6 +693,207 @@ class TestCacheMigration:
                 old_dir.rmdir()
 
 
+class TestVaultIndexerGetContent:
+    """Tests for VaultIndexer.get_content()."""
+
+    def test_full_mode_returns_full_content(self, temp_vault: Path) -> None:
+        """get_content(path) returns full file with mode='full'."""
+        test_file = temp_vault / "full-note.md"
+        test_file.write_text("Line one.\nLine two.\nLine three.")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            result = indexer.get_content(str(test_file))
+
+        assert result["mode"] == "full"
+        assert result["path"] == str(test_file.resolve())
+        assert result["content"] == "Line one.\nLine two.\nLine three."
+
+    def test_snippet_mode_with_query_returns_matching_lines(self, temp_vault: Path) -> None:
+        """get_content with snippet=True and query returns matching lines."""
+        test_file = temp_vault / "snippet-query.md"
+        test_file.write_text(
+            "Line zero.\nUNIQUE_TOKEN_XYZ in line two.\nLine three.\nLine four.\nLine five."
+        )
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            result = indexer.get_content(
+                str(test_file), snippet=True, query="UNIQUE_TOKEN_XYZ", context_lines=2
+            )
+
+        assert result["mode"] == "snippet"
+        assert "UNIQUE_TOKEN_XYZ" in result["content"]
+        # At most 2*context_lines+1 = 5 lines
+        assert len(result["content"].split("\n")) <= 5
+
+    def test_snippet_mode_without_query_returns_head(self, temp_vault: Path) -> None:
+        """get_content with snippet=True but no query returns first N lines."""
+        lines = "\n".join(f"Line {i}" for i in range(20))
+        test_file = temp_vault / "snippet-no-query.md"
+        test_file.write_text(lines)
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            result = indexer.get_content(str(test_file), snippet=True, context_lines=2)
+
+        assert result["mode"] == "snippet"
+        content_lines = result["content"].split("\n")
+        assert len(content_lines) <= 5
+        assert content_lines[0] == "Line 0"
+
+    def test_path_traversal_rejected(self, temp_vault: Path) -> None:
+        """../../etc/passwd raises ValueError with 'not in indexed roots'."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            with pytest.raises(ValueError, match="not in indexed roots"):
+                indexer.get_content("../../etc/passwd")
+
+    def test_absolute_path_outside_roots_rejected(self, temp_vault: Path) -> None:
+        """Absolute path outside vault roots raises ValueError."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            with pytest.raises(ValueError, match="not in indexed roots"):
+                indexer.get_content("/tmp/other-file.txt")
+
+    def test_symlink_escape_rejected(self, temp_vault: Path, tmp_path: Path) -> None:
+        """Symlink pointing outside vault roots raises ValueError."""
+        outside = tmp_path / "outside.txt"
+        outside.write_text("secret")
+
+        link = temp_vault / "link.md"
+        link.symlink_to(outside)
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            # Resolving the symlink lands outside the vault → rejected
+            with pytest.raises(ValueError, match="not in indexed roots"):
+                indexer.get_content(str(link))
+
+    def test_missing_file_raises_file_not_found_error(self, temp_vault: Path) -> None:
+        """Path inside vault but file missing raises FileNotFoundError."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            with pytest.raises(FileNotFoundError):
+                indexer.get_content(str(temp_vault / "does-not-exist.md"))
+
+    def test_context_lines_negative_clamped_to_zero(self, temp_vault: Path) -> None:
+        """context_lines < 0 is clamped to 0."""
+        test_file = temp_vault / "clamp-test.md"
+        test_file.write_text("Line zero.\nLine one.\nLine two.\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            # With context_lines=-5 (clamped to 0), returns first 1 line
+            result = indexer.get_content(str(test_file), snippet=True, context_lines=-5)
+
+        assert result["mode"] == "snippet"
+        # Should have at most 1 line (2*0+1=1)
+        assert len(result["content"].split("\n")) <= 1
+
+    def test_context_lines_exceeds_file_length_returns_all_lines(self, temp_vault: Path) -> None:
+        """context_lines larger than file content returns all lines."""
+        test_file = temp_vault / "short-file.md"
+        test_file.write_text("Short.\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            result = indexer.get_content(str(test_file), snippet=True, context_lines=10000)
+
+        assert result["mode"] == "snippet"
+        assert result["content"] == "Short.\n"
+
+    def test_query_no_match_falls_back_to_head(self, temp_vault: Path) -> None:
+        """Query with no matches falls back to file-head behavior."""
+        test_file = temp_vault / "no-match.md"
+        test_file.write_text("Line zero.\nLine one.\nLine two.\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            result = indexer.get_content(
+                str(test_file),
+                snippet=True,
+                query="NO_MATCHING_TOKEN_THAT_DOES_NOT_APPEAR",
+                context_lines=2,
+            )
+
+        assert result["mode"] == "snippet"
+        assert "Line zero" in result["content"]
+
+    def test_non_utf8_file_raises_runtime_error(self, temp_vault: Path) -> None:
+        """File unreadable by any encoding raises RuntimeError."""
+        test_file = temp_vault / "binary.bin"
+        test_file.write_bytes(b"\xff\xfe\x00\x00")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            with (
+                patch.object(indexer, "_read_file", return_value=None),
+                pytest.raises(RuntimeError, match="could not read file"),
+            ):
+                indexer.get_content(str(test_file))
+
+
 class TestEmbedNoProgressBar:
     """Ensure _embed_text disables tqdm to avoid the threading race.
 
