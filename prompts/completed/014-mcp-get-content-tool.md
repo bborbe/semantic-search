@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [001-content-fetch-endpoint]
+summary: Added get_content MCP tool to server.py using @mcp.tool decorator, reusing create_indexer() pattern and delegating to indexer.get_content()
+container: semantic-search-exec-014-mcp-get-content-tool
+dark-factory-version: v0.171.1-3-gd94f1fa
 created: "2026-05-24T21:00:00Z"
 queued: "2026-05-24T21:07:05Z"
+started: "2026-05-24T21:10:20Z"
+completed: "2026-05-24T21:11:19Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 

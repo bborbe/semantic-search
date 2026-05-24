@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.14.0
+
+- feat: add `get_content` MCP tool exposing `VaultIndexer.get_content()` to the MCP protocol layer
+
 ## v0.13.0
 
 - feat: add `GET /content` REST endpoint exposing `VaultIndexer.get_content()` over HTTP

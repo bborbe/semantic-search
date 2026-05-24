@@ -46,6 +46,33 @@ def check_duplicates(file_path: str) -> list[dict[str, str | float]] | dict[str,
     return indexer.find_duplicates(file_path)
 
 
+@mcp.tool
+def get_content(
+    path: str,
+    snippet: bool = False,
+    query: str | None = None,
+    context_lines: int = 20,
+) -> dict[str, str]:
+    """Fetch the content of a file from the indexed vault.
+
+    Args:
+        path: File path (absolute or relative to an indexed root)
+        snippet: If True, return a snippet around the best-matching line instead of the full file
+        query: Search string to find the best-matching line (only used when snippet=True)
+        context_lines: Number of lines before and after the match to include (default 20)
+
+    Returns:
+        Dict with keys: "path" (resolved absolute path),
+            "content" (string), "mode" ("full" | "snippet")
+
+    Raises:
+        ValueError: If path resolves outside the indexed vault roots
+        FileNotFoundError: If path is inside roots but file does not exist
+    """
+    indexer = create_indexer(CONTENT_PATHS)
+    return indexer.get_content(path, snippet, query, context_lines)
+
+
 def run() -> None:
     """Run the MCP server."""
     logger.info("[Server] Starting MCP server (fastmcp)")
