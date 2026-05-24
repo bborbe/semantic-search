@@ -1,5 +1,5 @@
 ---
-status: committing
+status: completed
 spec: [001-content-fetch-endpoint]
 summary: Added comprehensive test coverage for VaultIndexer.get_content(), GET /content HTTP endpoint, and get_content MCP tool - 97 tests passing, make precommit clean
 container: semantic-search-exec-015-content-fetch-tests
@@ -7,7 +7,7 @@ dark-factory-version: v0.171.1-3-gd94f1fa
 created: "2026-05-24T21:00:00Z"
 queued: "2026-05-24T21:07:05Z"
 started: "2026-05-24T21:11:22Z"
-completed: "2026-05-24T21:16:09Z"
+completed: "2026-05-24T21:16:21Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 
