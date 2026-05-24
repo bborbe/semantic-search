@@ -386,6 +386,86 @@ class VaultIndexer:
                 break
         return results
 
+    def get_content(
+        self,
+        path: str,
+        snippet: bool = False,
+        query: str | None = None,
+        context_lines: int = 20,
+    ) -> dict[str, str]:
+        """Return content for the given path, optionally as a snippet around the best-matching line.
+
+        Args:
+            path: File path (absolute or relative to a vault root)
+            snippet: If True, return a snippet instead of the full file
+            query: Search string used to find the best-matching line
+                (only meaningful when snippet=True)
+            context_lines: Number of lines before and after the best match to include
+
+        Returns:
+            Dict with keys: "path" (resolved absolute path),
+                "content" (string), "mode" ("full" | "snippet")
+
+        Raises:
+            ValueError: If path resolves outside the indexed vault roots
+            FileNotFoundError: If path is inside roots but file does not exist
+        """
+        # Resolve the path (follows symlinks)
+        resolved_path = Path(path).resolve()
+
+        # Path validation: check if resolved path is inside any vault root
+        is_inside = any(resolved_path.is_relative_to(vp) for vp in self.vault_paths)
+        if not is_inside:
+            raise ValueError("path not in indexed roots")
+
+        # Existence check (must happen BEFORE reading)
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"file not found: {path}")
+
+        # Read the file using _read_file
+        file_content = self._read_file(resolved_path)
+        if file_content is None:
+            raise RuntimeError("could not read file")
+
+        resolved_path_str = str(resolved_path)
+
+        if not snippet:
+            return {"path": resolved_path_str, "content": file_content, "mode": "full"}
+
+        # Snippet mode
+        if context_lines < 0:
+            context_lines = 0
+
+        lines = file_content.split("\n")
+        total_lines = len(lines)
+
+        if query and query.strip():
+            # Snippet mode with query: find best-matching line
+            tokens = query.lower().split()
+            best_idx = 0
+            best_score = 0
+            for idx, line in enumerate(lines):
+                line_lower = line.lower()
+                score = sum(1 for tok in tokens if tok in line_lower)
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+
+            if best_score == 0:
+                # No match, fall back to file-head behavior
+                end_idx = min(context_lines * 2 + 1, total_lines)
+                snippet_content = "\n".join(lines[:end_idx])
+            else:
+                start_idx = max(0, best_idx - context_lines)
+                end_idx = min(best_idx + context_lines + 1, total_lines)
+                snippet_content = "\n".join(lines[start_idx:end_idx])
+        else:
+            # Snippet mode without query: return first 2 * context_lines + 1 lines
+            end_idx = min(context_lines * 2 + 1, total_lines)
+            snippet_content = "\n".join(lines[:end_idx])
+
+        return {"path": resolved_path_str, "content": snippet_content, "mode": "snippet"}
+
     def find_duplicates(self, file_path: str | Path) -> list[dict[str, Any]] | dict[str, str]:
         """Find potential duplicates of a file."""
         file_path = Path(file_path) if isinstance(file_path, str) else file_path
