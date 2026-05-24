@@ -1,5 +1,5 @@
 ---
-status: verifying
+status: completed
 tags:
     - dark-factory
     - spec
@@ -7,6 +7,7 @@ approved: "2026-05-24T20:41:13Z"
 generating: "2026-05-24T20:55:58Z"
 prompted: "2026-05-24T21:00:05Z"
 verifying: "2026-05-24T21:18:02Z"
+completed: "2026-05-24T21:51:58Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 
