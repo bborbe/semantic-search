@@ -413,8 +413,11 @@ class VaultIndexer:
         # Resolve the path (follows symlinks)
         resolved_path = Path(path).resolve()
 
-        # Path validation: check if resolved path is inside any vault root
-        is_inside = any(resolved_path.is_relative_to(vp) for vp in self.vault_paths)
+        # Path validation: check if resolved path is inside any vault root.
+        # vault_paths are stored unresolved; resolve each here so the comparison
+        # is consistent on systems where the vault path crosses a symlink
+        # (e.g. macOS `/tmp` → `/private/tmp`).
+        is_inside = any(resolved_path.is_relative_to(vp.resolve()) for vp in self.vault_paths)
         if not is_inside:
             raise ValueError("path not in indexed roots")
 

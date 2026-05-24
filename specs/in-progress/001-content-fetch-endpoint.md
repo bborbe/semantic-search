@@ -1,11 +1,12 @@
 ---
-status: prompted
+status: verifying
 tags:
     - dark-factory
     - spec
 approved: "2026-05-24T20:41:13Z"
 generating: "2026-05-24T20:55:58Z"
 prompted: "2026-05-24T21:00:05Z"
+verifying: "2026-05-24T21:18:02Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 
@@ -124,3 +125,20 @@ Expected: host B receives the file snippet without needing the file to exist loc
 ## Do-Nothing Option
 
 If we do nothing, semantic-search remains usable only when the client shares a filesystem with the server. Remote deployment is blocked; every consuming agent must run on the same host or mount the indexed vault. The current local-only workflow is acceptable for Claude Code on the developer's machine but is the explicit blocker for remote and multi-tenant deployments. Doing nothing means rejecting the remote-deployment goal entirely.
+
+## Verification Result
+
+**Verified:** 2026-05-24T21:50:39Z (HEAD 4314255)
+**Binary:** /Users/bborbe/Documents/workspaces/go/bin/dark-factory (v0.171.1-3-gd94f1fa)
+**Scenario:** Real-HTTP replay of scenarios 004 (happy paths) + 005 (error responses) against live `semantic-search-http` on loopback, plus `make precommit` covering test-based ACs and structural grep checks for README/CHANGELOG.
+**Evidence:**
+- Scenario 004 A2 (full mode): `curl /content?path=/tmp/scenario-content/kubernetes.md` → 200, body `{"path":"/private/tmp/scenario-content/kubernetes.md","content":"# Kubernetes deployment notes\n\n...","mode":"full"}`
+- Scenario 004 A3 (snippet mode): `curl ...?snippet=true&query=autoscaling&context_lines=0` → 200, body `{"...","content":"container scheduling, rolling updates, and horizontal pod autoscaling.","mode":"snippet"}` (70 bytes vs 174 bytes full — narrower confirmed)
+- Scenario 005 A5 (traversal): `curl /content?path=/etc/passwd` → 400, body `{"error":{"code":"PATH_OUTSIDE_ROOTS","message":"path not in indexed roots"}}`
+- Scenario 005 A6 (missing): `curl ...?path=/tmp/scenario-content/does-not-exist.md` → 404, body `{"error":{"code":"FILE_NOT_FOUND","message":"file not found: /tmp/scenario-content/does-not-exist.md"}}`
+- `make precommit` → exit 0 in 10.5s, 98 tests passed, mypy 0 issues, ruff clean (covers AC1, AC6, AC8, AC13, AC14)
+- AC10 README: `grep -n get_content README.md` → L53, L126; `grep -ni "remote deployment" README.md` → L124
+- AC11 CHANGELOG L13: `feat: Add get_content MCP tool and GET /content REST endpoint...`
+- AC12 search_related unchanged: `git diff origin/master..HEAD -- tests/test_http_server.py` shows zero changes to `search_related` assertions
+- Bug found and fixed during scenario replay: `indexer.get_content` compared `resolved_path` against unresolved `vault_paths`, falsely rejecting `/tmp/...` on macOS (resolves to `/private/tmp/...`). Fixed via `vp.resolve()` in `is_relative_to` check; regression test `test_unresolved_vault_path_with_symlink_root_accepted` added. Test bug in `test_content_returns_503_when_not_ready` also fixed (background indexer not properly patched).
+**Verdict:** PASS

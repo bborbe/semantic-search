@@ -714,6 +714,28 @@ class TestVaultIndexerGetContent:
         assert result["path"] == str(test_file.resolve())
         assert result["content"] == "Line one.\nLine two.\nLine three."
 
+    def test_unresolved_vault_path_with_symlink_root_accepted(self, tmp_path: Path) -> None:
+        """Regression: vault root that crosses a symlink (e.g. macOS /tmp -> /private/tmp)
+        must still accept files inside it. The validator must resolve vault paths
+        before comparing with the resolved request path."""
+        real_root = tmp_path / "real"
+        real_root.mkdir()
+        (real_root / "note.md").write_text("hello")
+        symlink_root = tmp_path / "via-symlink"
+        symlink_root.symlink_to(real_root)
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(symlink_root))
+            result = indexer.get_content(str(symlink_root / "note.md"))
+
+        assert result["mode"] == "full"
+        assert result["content"] == "hello"
+
     def test_snippet_mode_with_query_returns_matching_lines(self, temp_vault: Path) -> None:
         """get_content with snippet=True and query returns matching lines."""
         test_file = temp_vault / "snippet-query.md"

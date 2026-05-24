@@ -510,6 +510,7 @@ class TestContentEndpoint:
     def test_content_returns_503_when_not_ready(self) -> None:
         """Before indexer is ready, /content returns 503 with Retry-After header."""
         import asyncio
+        from unittest.mock import patch
 
         import semantic_search.http_server as http_server
 
@@ -523,7 +524,9 @@ class TestContentEndpoint:
             http_server._indexer_ready = asyncio.Event()  # unset
             http_server._indexer = None
             with (
-                MagicMock(),
+                patch.object(
+                    http_server, "_build_indexer_in_background", side_effect=never_completes
+                ),
                 TestClient(build_app()) as client,
             ):
                 resp = client.get("/content?path=test.md")
