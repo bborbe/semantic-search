@@ -6,6 +6,23 @@ from unittest.mock import Mock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolated_indexer_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect the indexer's user_cache_dir into a per-test tmp dir.
+
+    Without this, VaultIndexer writes its FAISS index and meta to the host's
+    persistent user cache (~/Library/Caches/semantic-search/<hash>). Stale
+    entries from earlier runs can collide with a fresh test's content_hash
+    and be loaded as "0 entries", causing _path_to_idx lookups to KeyError.
+    """
+    cache_root = tmp_path / "indexer-cache"
+    cache_root.mkdir()
+    monkeypatch.setattr(
+        "semantic_search.indexer.user_cache_dir",
+        lambda *args, **kwargs: str(cache_root),
+    )
+
+
 @pytest.fixture
 def temp_vault(tmp_path: Path) -> Path:
     """Create a temporary vault directory with test markdown files."""
