@@ -150,6 +150,70 @@ async def duplicates(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def content(request: Request) -> JSONResponse:
+    """Handle /content endpoint.
+
+    Returns file content for a given path, optionally as a snippet around
+    the best-matching line for the given query.
+    """
+    # Step 1: parse path (must be first)
+    path = request.query_params.get("path")
+    if not path:
+        return JSONResponse(
+            {"error": {"code": "MISSING_PATH", "message": "Missing 'path' parameter"}},
+            status_code=400,
+        )
+
+    # Step 2: gate on readiness
+    if not _indexer_ready.is_set() or _indexer is None:
+        return _not_ready_response()
+
+    # Step 3: parse remaining params
+    snippet_str = request.query_params.get("snippet", "false")
+    snippet = snippet_str.lower() == "true"
+
+    query = request.query_params.get("query")
+    if query is not None and query.strip() == "":
+        query = None
+
+    context_lines_str = request.query_params.get("context_lines", "20")
+    try:
+        context_lines = int(context_lines_str)
+    except ValueError:
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "INVALID_CONTEXT_LINES",
+                    "message": "Invalid 'context_lines' parameter",
+                }
+            },
+            status_code=400,
+        )
+
+    # Step 4: call get_content in threadpool
+    indexer = get_indexer()
+    try:
+        result = await run_in_threadpool(indexer.get_content, path, snippet, query, context_lines)
+    except ValueError:
+        logger.warning("path not in indexed roots: %s", path)
+        return JSONResponse(
+            {"error": {"code": "PATH_OUTSIDE_ROOTS", "message": "path not in indexed roots"}},
+            status_code=400,
+        )
+    except FileNotFoundError:
+        logger.info("file not found: %s", path)
+        return JSONResponse(
+            {"error": {"code": "FILE_NOT_FOUND", "message": f"file not found: {path}"}},
+            status_code=404,
+        )
+    except RuntimeError:
+        return JSONResponse(
+            {"error": {"code": "UNREADABLE_FILE", "message": f"could not read file: {path}"}},
+            status_code=422,
+        )
+    return JSONResponse(result, status_code=200)
+
+
 async def reindex(request: Request) -> JSONResponse:
     """Handle /reindex endpoint. Blocks until reindex completes.
 
@@ -195,6 +259,7 @@ def build_app() -> Starlette:
 
     routes = [
         Route("/health", health, methods=["GET"]),
+        Route("/content", content, methods=["GET"]),
         Route("/search", search, methods=["GET"]),
         Route("/duplicates", duplicates, methods=["GET"]),
         Route("/reindex", reindex, methods=["GET", "POST"]),
@@ -225,6 +290,7 @@ def main() -> None:
     app = build_app()
     logger.info(f"Serving REST + MCP on http://{args.host}:{args.port}")
     logger.info("  GET  /health")
+    logger.info("  GET  /content?path=...&snippet=...&query=...&context_lines=...")
     logger.info("  GET  /search?q=...&top_k=5")
     logger.info("  GET  /duplicates?file=...&threshold=0.85")
     logger.info("  GET/POST /reindex")

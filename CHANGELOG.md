@@ -8,9 +8,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## v0.12.0
+## v0.13.0
 
-- feat: add `VaultIndexer.get_content()` method for retrieving file content by path with optional snippet extraction
+- feat: add `GET /content` REST endpoint exposing `VaultIndexer.get_content()` over HTTP
+
+## v0.12.0
 
 ## v0.11.1
 

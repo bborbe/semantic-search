@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [001-content-fetch-endpoint]
+summary: Added GET /content REST endpoint with path validation, readiness gating, snippet/query/context_lines params, threadpool execution, and nested error responses
+container: semantic-search-exec-013-http-content-endpoint
+dark-factory-version: v0.171.1-3-gd94f1fa
 created: "2026-05-24T21:00:00Z"
 queued: "2026-05-24T21:07:05Z"
+started: "2026-05-24T21:09:03Z"
+completed: "2026-05-24T21:10:17Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 
