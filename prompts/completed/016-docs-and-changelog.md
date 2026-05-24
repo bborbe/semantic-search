@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [001-content-fetch-endpoint]
+summary: 'Updated README.md with two-step flow example, snippet mode example, remote deployment section, and updated REST/MCP tables; added ## Unreleased entry to CHANGELOG.md'
+container: semantic-search-exec-016-docs-and-changelog
+dark-factory-version: v0.171.1-3-gd94f1fa
 created: "2026-05-24T21:00:00Z"
 queued: "2026-05-24T21:07:05Z"
+started: "2026-05-24T21:16:23Z"
+completed: "2026-05-24T21:18:00Z"
 branch: dark-factory/content-fetch-endpoint
 ---
 

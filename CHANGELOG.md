@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.15.0
+
+- feat: Add `get_content` MCP tool and `GET /content` REST endpoint for retrieving file content from indexed vaults. Supports full-file and query-focused snippet modes. Enables remote deployment of semantic-search clients without filesystem access to the vault directory.
+
 ## v0.14.0
 
 - feat: add `get_content` MCP tool exposing `VaultIndexer.get_content()` to the MCP protocol layer

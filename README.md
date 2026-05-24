@@ -50,6 +50,7 @@ claude mcp add -s project semantic-search \
 
 **Tools available:**
 - `search_related(query, top_k=5)` — Find semantically related notes
+- `get_content(path, snippet, query, context_lines)` — Retrieve file content from indexed vaults
 - `check_duplicates(file_path)` — Detect duplicate/similar notes
 
 ### HTTP (shared across all clients)
@@ -80,6 +81,7 @@ Point Claude Code at it via MCP config:
 | `/mcp` | POST | MCP-over-HTTP (Claude Code) |
 | `/search?q=...&top_k=5` | GET | Semantic search |
 | `/duplicates?file=...&threshold=0.85` | GET | Find duplicate notes |
+| `/content?path=...&snippet=...&query=...&context_lines=...` | GET | Retrieve file content |
 | `/health` | GET | Health check with index stats |
 | `/reindex` | GET/POST | Force index rebuild |
 
@@ -94,6 +96,34 @@ curl 'http://127.0.0.1:8321/duplicates?file=notes/my-note.md'
 # Health check
 curl 'http://127.0.0.1:8321/health'
 ```
+
+### Two-Step Flow
+
+Search for related notes, then fetch the full content of any result:
+
+```bash
+# Step 1: Search for related notes
+curl 'http://127.0.0.1:8321/search?q=kubernetes+deployment'
+# Returns: [{"path": "notes/k8s-guide.md", "score": 0.92}, ...]
+
+# Step 2: Fetch the content of a result
+curl 'http://127.0.0.1:8321/content?path=notes/k8s-guide.md'
+# Returns: {"path": "/full/resolved/path.md", "content": "# Kubernetes Guide\n...", "mode": "full"}
+```
+
+### Snippet Mode
+
+Retrieve a focused snippet around a specific query term within a file:
+
+```bash
+# Get a focused snippet around "service mesh" in the file
+curl 'http://127.0.0.1:8321/content?path=notes/k8s-guide.md&snippet=true&query=service+mesh&context_lines=10'
+# Returns: {"path": "...", "content": "...\n## Service Mesh\n...", "mode": "snippet"}
+```
+
+### Remote Deployment
+
+`get_content` and `GET /content` enable remote deployment of semantic-search clients. Callers no longer need filesystem access to the vault directory — all content retrieval happens over HTTP/MCP from any network location. The server enforces path validation: files outside indexed roots are never served.
 
 ## Claude Code Plugin
 
