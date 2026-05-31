@@ -1,0 +1,4 @@
+release:
+  autoRelease: true
+prReviewer:
+  autoApprove: true
