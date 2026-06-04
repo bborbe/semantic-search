@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 
+from ._version import __version__
 from .logging_setup import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,10 @@ def main() -> None:
     configure_logging(log_level)
 
     try:
+        if len(sys.argv) >= 2 and sys.argv[1] in ("--version", "-V"):
+            print(f"semantic-search-mcp v{__version__}")
+            sys.exit(0)
+
         if len(sys.argv) < 2:
             print(
                 "Error: no subcommand given. Did you mean 'serve'?",
@@ -94,6 +99,10 @@ def main_cli() -> None:
     configure_logging(log_level)
 
     try:
+        if len(sys.argv) >= 2 and sys.argv[1] in ("--version", "-V"):
+            print(f"semantic-search v{__version__}")
+            sys.exit(0)
+
         if len(sys.argv) < 2:
             print("Error: no subcommand given.", file=sys.stderr)
             print(file=sys.stderr)

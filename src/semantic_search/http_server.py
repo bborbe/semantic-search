@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
+from ._version import __version__
 from .factory import create_indexer
 from .indexer import VaultIndexer
 from .server import mcp  # reuse the existing FastMCP instance with tools registered
@@ -281,6 +282,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="semantic-search-http",
         description="Unified HTTP server: REST endpoints + MCP-over-HTTP on one port",
+    )
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"semantic-search-http v{__version__}",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8321, help="Port to bind (default: 8321)")

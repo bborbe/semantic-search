@@ -1,8 +1,11 @@
 """Tests for unified HTTP server."""
 
 import asyncio
+import re
+import sys
 from unittest.mock import MagicMock
 
+import pytest
 from starlette.testclient import TestClient
 
 from semantic_search.http_server import build_app
@@ -640,4 +643,43 @@ class TestMcpMount:
             f"Expected 400 or 406 from mounted MCP handler, got {resp.status_code}. "
             f"A 404 means the route is not mounted; a 405 means the transport "
             f"rejected the method, which contradicts fastmcp streamable-http behavior."
+        )
+
+
+class TestVersionFlag:
+    """`semantic-search-http --version` / `-V` exits 0 with the version on stdout.
+
+    The argparse `action="version"` action writes the version to stdout and
+    raises `SystemExit(0)`. We exercise the boundary end-to-end — asserting
+    the argument is REGISTERED on the parser is not sufficient.
+    """
+
+    def test_version_long_flag(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`semantic-search-http --version` prints the version and exits 0."""
+        monkeypatch.setattr(sys, "argv", ["semantic-search-http", "--version"])
+        from semantic_search.http_server import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert re.match(r"^semantic-search-http v[0-9]+\.[0-9]+", captured.out), (
+            f"expected version on stdout, got: {captured.out!r}"
+        )
+
+    def test_version_short_flag(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`semantic-search-http -V` prints the version and exits 0."""
+        monkeypatch.setattr(sys, "argv", ["semantic-search-http", "-V"])
+        from semantic_search.http_server import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert re.match(r"^semantic-search-http v[0-9]+\.[0-9]+", captured.out), (
+            f"expected version on stdout, got: {captured.out!r}"
         )
