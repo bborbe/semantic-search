@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.15.2
 
 - chore: Lower `requires-python` floor from `>=3.14` to `>=3.13` and move ruff `target-version` / mypy `python_version` in lockstep. Unblocks installation in containers that ship only Python 3.13 (Debian 13 trixie default, Ubuntu 24.04 LTS after the 3.12 window). No source code change; `uv.lock` regenerated against the new floor.
 
