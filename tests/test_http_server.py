@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.testclient import TestClient
 
-from semantic_search.http_server import build_app
+from semantic_search.http_server import build_app, main
 
 
 class TestHealthEndpoint:
@@ -659,7 +659,6 @@ class TestVersionFlag:
     ) -> None:
         """`semantic-search-http --version` prints the version and exits 0."""
         monkeypatch.setattr(sys, "argv", ["semantic-search-http", "--version"])
-        from semantic_search.http_server import main
 
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -674,7 +673,6 @@ class TestVersionFlag:
     ) -> None:
         """`semantic-search-http -V` prints the version and exits 0."""
         monkeypatch.setattr(sys, "argv", ["semantic-search-http", "-V"])
-        from semantic_search.http_server import main
 
         with pytest.raises(SystemExit) as exc_info:
             main()
