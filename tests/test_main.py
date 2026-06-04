@@ -1,5 +1,6 @@
 """Tests for __main__ entry points."""
 
+import re
 import sys
 from unittest.mock import patch
 
@@ -52,3 +53,67 @@ def test_serve_invokes_stdio_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
         main_module.main()
 
     mock_run.assert_called_once_with()
+
+
+def test_main_cli_version_long_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`semantic-search --version` prints the version and exits 0."""
+    monkeypatch.setattr(sys, "argv", ["semantic-search", "--version"])
+    from semantic_search.__main__ import main_cli
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_cli()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert re.match(r"^semantic-search v[0-9]+\.[0-9]+", captured.out), (
+        f"expected version on stdout, got: {captured.out!r}"
+    )
+
+
+def test_main_cli_version_short_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`semantic-search -V` prints the version and exits 0."""
+    monkeypatch.setattr(sys, "argv", ["semantic-search", "-V"])
+    from semantic_search.__main__ import main_cli
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_cli()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert re.match(r"^semantic-search v[0-9]+\.[0-9]+", captured.out), (
+        f"expected version on stdout, got: {captured.out!r}"
+    )
+
+
+def test_main_version_long_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`semantic-search-mcp --version` prints the version and exits 0."""
+    monkeypatch.setattr(sys, "argv", ["semantic-search-mcp", "--version"])
+    from semantic_search.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert re.match(r"^semantic-search-mcp v[0-9]+\.[0-9]+", captured.out), (
+        f"expected version on stdout, got: {captured.out!r}"
+    )
+
+
+def test_main_version_short_flag(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`semantic-search-mcp -V` prints the version and exits 0."""
+    monkeypatch.setattr(sys, "argv", ["semantic-search-mcp", "-V"])
+    from semantic_search.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert re.match(r"^semantic-search-mcp v[0-9]+\.[0-9]+", captured.out), (
+        f"expected version on stdout, got: {captured.out!r}"
+    )
