@@ -1,8 +1,10 @@
-autoRelease: false
-maxContainers: 5
-pr: false
+autoGeneratePrompts: true
+maxContainers: 8
+preflightCommand: "make precommit"
+preflightInterval: "8h"
+testCommand: "make test"
 validationPrompt: docs/dod.md
-worktree: false
+workflow: direct
 extraMounts:
   - src: ~/.cache/uv
     dst: /home/node/.cache/uv

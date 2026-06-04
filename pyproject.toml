@@ -2,7 +2,7 @@
 name = "semantic-search"
 dynamic = ["version"]
 description = "Semantic search over markdown files (MCP + REST modes)"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 license = { text = "BSD-2-Clause" }
 readme = "README.md"
 authors = [
@@ -49,7 +49,7 @@ packages = ["src/semantic_search"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py313"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -66,7 +66,7 @@ select = [
 ]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
