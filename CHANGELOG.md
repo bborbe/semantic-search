@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.16.0
 
 - feat: add `--version` / `-V` to all three CLIs (`semantic-search`, `semantic-search-mcp`, `semantic-search-http`)
 
