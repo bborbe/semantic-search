@@ -84,7 +84,7 @@ Skip the scenario gate only if `git diff $INSTALLED..HEAD --name-only` matches n
 
 ### Toolchain
 
-- Python 3.14+, `uv` package manager, `hatchling` build backend
+- Python 3.13+, `uv` package manager, `hatchling` build backend
 - Source at `src/semantic_search/` (src/ layout)
 - Strict mypy enabled
 
