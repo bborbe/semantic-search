@@ -1,5 +1,8 @@
 # Semantic Search
 
+[![CI](https://github.com/bborbe/semantic-search/actions/workflows/ci.yml/badge.svg)](https://github.com/bborbe/semantic-search/actions/workflows/ci.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bborbe/semantic-search)
+
 Semantic search over markdown files. Find related notes by meaning, not just keywords. Detect duplicates before creating new notes.
 
 Supports two server transports:
