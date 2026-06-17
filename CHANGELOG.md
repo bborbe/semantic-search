@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: add `/semantic-search:explorer` slash command — recursive vault exploration via wikilink-graph BFS over semantic-search results, with saturation-stop and hard-cap safeguards
+
 ## v0.16.1
 
 - docs: add CI and DeepWiki badges to README
