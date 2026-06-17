@@ -514,3 +514,206 @@ class TestVaultEventHandlerMoves:
                 assert "/vault/note.md" in handler._pending_deletes
                 assert len(handler._pending) == 0
                 mock_timer_cls.assert_called_once()
+
+
+class TestVaultIgnoreGate:
+    """Tests for .semanticignore integration in _VaultEventHandler."""
+
+    def _make_event(self, path: str, is_directory: bool = False) -> Mock:
+        event = Mock()
+        event.src_path = path
+        event.is_directory = is_directory
+        return event
+
+    def _make_move_event(self, src_path: str, dest_path: str, is_directory: bool = False) -> Mock:
+        event = Mock()
+        event.src_path = src_path
+        event.dest_path = dest_path
+        event.is_directory = is_directory
+        return event
+
+    def test_ignored_path_not_queued_on_created(self, tmp_path: Path) -> None:
+        """AC5: on_created for an ignored path must NOT add to _pending."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("archive/\n")
+        archive = vault / "archive"
+        archive.mkdir()
+        (archive / "old.md").write_text("# Old note\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                handler.on_created(self._make_event(str(archive / "old.md")))
+
+                assert str(archive / "old.md") not in handler._pending
+
+    def test_ignored_path_not_queued_on_modified(self, tmp_path: Path) -> None:
+        """AC5: on_modified for an ignored path must NOT add to _pending."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("archive/\n")
+        archive = vault / "archive"
+        archive.mkdir()
+        (archive / "old.md").write_text("# Old note\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                handler.on_modified(self._make_event(str(archive / "old.md")))
+
+                assert str(archive / "old.md") not in handler._pending
+
+    def test_non_ignored_path_queued(self, tmp_path: Path) -> None:
+        """Non-ignored path IS added to _pending on created/modified events."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("archive/\n")
+        (vault / "kept.md").write_text("# Kept note\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                handler.on_created(self._make_event(str(vault / "kept.md")))
+
+                assert str(vault / "kept.md") in handler._pending
+
+    def test_runtime_reload_on_semanticignore_modified(self, tmp_path: Path) -> None:
+        """AC6: modifying .semanticignore reloads rules; subsequent events honor new patterns."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("")
+        (vault / "new-secret.md").write_text("# Secret\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                # Initially new-secret.md is NOT ignored
+                assert handler._is_ignored_path(str(vault / "new-secret.md")) is False
+
+                # Update .semanticignore on disk and trigger a reload
+                (vault / ".semanticignore").write_text("new-secret.md\n")
+                result = handler._maybe_reload_ignore(str(vault / ".semanticignore"))
+
+                assert result is True
+                # After reload the pattern is active
+                assert handler._is_ignored_path(str(vault / "new-secret.md")) is True
+
+                # A created event for the now-ignored file must not reach _pending
+                handler.on_created(self._make_event(str(vault / "new-secret.md")))
+                assert str(vault / "new-secret.md") not in handler._pending
+
+    def test_on_moved_ignored_destination_not_queued(self, tmp_path: Path) -> None:
+        """on_moved to an ignored destination must not add dest to _pending."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("archive/\n")
+        (vault / "archive").mkdir()
+        (vault / "kept.md").write_text("# Kept\n")
+
+        dest = str(vault / "archive" / "moved.md")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                handler.on_moved(
+                    self._make_move_event(src_path=str(vault / "kept.md"), dest_path=dest)
+                )
+
+                assert dest not in handler._pending
+                # Source must still be queued for deletion
+                assert str(vault / "kept.md") in handler._pending_deletes
+
+    def test_on_deleted_semanticignore_reloads_to_accept_all(self, tmp_path: Path) -> None:
+        """Deleting .semanticignore reloads to accept-all; ignored paths become indexable."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("secret.md\n")
+        (vault / "secret.md").write_text("# Secret\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                assert handler._is_ignored_path(str(vault / "secret.md")) is True
+
+                # Delete the file on disk, then trigger a reload
+                (vault / ".semanticignore").unlink()
+                result = handler._maybe_reload_ignore(str(vault / ".semanticignore"))
+
+                assert result is True
+                # With no .semanticignore the filter falls back to accept-all
+                assert handler._is_ignored_path(str(vault / "secret.md")) is False
+
+    def test_outside_vault_path_never_ignored(self, tmp_path: Path) -> None:
+        """Paths outside all vault roots are never reported as ignored."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".semanticignore").write_text("secret.md\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            with patch("semantic_search.indexer.threading.Timer") as mock_timer_cls:
+                mock_timer_cls.return_value = Mock()
+
+                from semantic_search.indexer import VaultIndexer, _VaultEventHandler
+
+                indexer = VaultIndexer(str(vault))
+                handler = _VaultEventHandler(indexer)
+
+                assert handler._is_ignored_path("/tmp/somewhere/else/x.md") is False

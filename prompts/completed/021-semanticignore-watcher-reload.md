@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [003-semanticignore-support]
+summary: 'Wired .semanticignore ignore gate into _VaultEventHandler: ignored paths are dropped in on_created/on_modified/on_moved, and .semanticignore changes trigger atomic per-vault reload via _maybe_reload_ignore'
+container: semantic-search-semanticignore-exec-021-semanticignore-watcher-reload
+dark-factory-version: v0.181.0
 created: "2026-06-17T00:00:00Z"
 queued: "2026-06-17T10:26:28Z"
+started: "2026-06-17T10:40:40Z"
+completed: "2026-06-17T10:46:23Z"
 branch: dark-factory/semanticignore-support
 ---
 

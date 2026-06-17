@@ -627,6 +627,38 @@ class _VaultEventHandler(FileSystemEventHandler):
             return False
         return _VaultEventHandler._is_path_indexable(str(event.src_path))
 
+    def _is_ignored_path(self, path: str) -> bool:
+        """Return True iff the path is excluded by the owning vault's .semanticignore.
+
+        Finds the vault root that owns the path (via VaultIndexer.vault_paths) and
+        delegates to the indexer's ignore check. Paths outside all vault roots are
+        treated as NOT ignored.
+        """
+        resolved = Path(path).resolve()
+        for vp in self.indexer.vault_paths:
+            if resolved.is_relative_to(vp.resolve()):
+                return self.indexer._is_ignored(vp, Path(path))
+        return False
+
+    def _maybe_reload_ignore(self, path: str) -> bool:
+        """If path is a vault's .semanticignore file, reload that vault's rules and return True.
+
+        Returns False if the path is not a .semanticignore file, so the caller
+        continues normal event handling.
+        """
+        if Path(path).name != ".semanticignore":
+            return False
+
+        resolved = Path(path).resolve()
+        for vp in self.indexer.vault_paths:
+            if resolved.is_relative_to(vp.resolve()):
+                vault_ignore = self.indexer._ignores.get(vp)
+                if vault_ignore is not None:
+                    vault_ignore.reload()
+                    logger.info(f"reloaded .semanticignore for vault {vp}")
+                return True
+        return False
+
     def _flush(self) -> None:
         """Process all pending changes incrementally (no full rebuild)."""
         with self._lock:
@@ -653,20 +685,30 @@ class _VaultEventHandler(FileSystemEventHandler):
                 logger.exception(f"[EventHandler] Failed to index {path}")
 
     def on_modified(self, event: FileSystemEvent) -> None:
+        if self._maybe_reload_ignore(str(event.src_path)):
+            return
         if not self._is_indexable_event(event):
+            return
+        if self._is_ignored_path(str(event.src_path)):
             return
         with self._lock:
             self._pending[str(event.src_path)] = time.time()
             self._schedule_flush()
 
     def on_created(self, event: FileSystemEvent) -> None:
+        if self._maybe_reload_ignore(str(event.src_path)):
+            return
         if not self._is_indexable_event(event):
+            return
+        if self._is_ignored_path(str(event.src_path)):
             return
         with self._lock:
             self._pending[str(event.src_path)] = time.time()
             self._schedule_flush()
 
     def on_deleted(self, event: FileSystemEvent) -> None:
+        if self._maybe_reload_ignore(str(event.src_path)):
+            return
         if not self._is_indexable_event(event):
             return
         with self._lock:
@@ -692,7 +734,11 @@ class _VaultEventHandler(FileSystemEventHandler):
         dest_path = str(dest_path_attr) if dest_path_attr is not None else None
 
         src_indexable = self._is_path_indexable(src_path)
-        dest_indexable = dest_path is not None and self._is_path_indexable(dest_path)
+        dest_indexable = (
+            dest_path is not None
+            and self._is_path_indexable(dest_path)
+            and not self._is_ignored_path(dest_path)
+        )
 
         if not src_indexable and not dest_indexable:
             return
