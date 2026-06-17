@@ -1,5 +1,7 @@
 """Tests for VaultIndexer."""
 
+import logging
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -948,3 +950,201 @@ class TestEmbedNoProgressBar:
                 f"encode() must be called with show_progress_bar=False "
                 f"to avoid the tqdm threading race; got kwargs={call_kwargs}"
             )
+
+
+class TestVaultIgnoreIntegration:
+    """Integration tests for .semanticignore filtering wired into VaultIndexer."""
+
+    def test_ac3_rebuild_excludes_ignored_paths(self, tmp_path: Path) -> None:
+        """AC3: rebuild_index skips files matched by .semanticignore."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "a.md").write_text("# A\nContent A")
+        (vault / "b.md").write_text("# B\nContent B")
+        archive = vault / "archive"
+        archive.mkdir()
+        (archive / "old.md").write_text("# Old\nArchived content")
+        (vault / ".semanticignore").write_text("archive/\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(vault))
+            indexer.rebuild_index()
+
+        indexed_names = {Path(v["path"]).name for v in indexer.meta.values()}
+        assert indexed_names == {"a.md", "b.md"}
+        assert "old.md" not in indexed_names
+
+    def test_ac4_add_file_noop_when_ignored(self, tmp_path: Path) -> None:
+        """AC4: add_file_to_index is a no-op for files matching .semanticignore."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "visible.md").write_text("# Visible")
+        archive = vault / "archive"
+        archive.mkdir()
+        (archive / "old.md").write_text("# Old\nArchived")
+        (vault / ".semanticignore").write_text("archive/\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(vault))
+            indexer.rebuild_index()
+
+            ntotal_before = indexer.index.ntotal
+            meta_before = dict(indexer.meta)
+
+            indexer.add_file_to_index(str(archive / "old.md"))
+
+        assert indexer.index.ntotal == ntotal_before
+        assert indexer.meta == meta_before
+        assert all("old.md" not in v["path"] for v in indexer.meta.values())
+
+    def test_ac7_semanticignore_itself_not_indexed(self, tmp_path: Path) -> None:
+        """AC7: .semanticignore is never present in the index metadata."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "note.md").write_text("# Note")
+
+        # Test with empty .semanticignore
+        (vault / ".semanticignore").write_text("")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(vault))
+            indexer.rebuild_index()
+
+        basenames = {Path(v["path"]).name for v in indexer.meta.values()}
+        assert ".semanticignore" not in basenames
+
+        # Test with non-empty .semanticignore
+        (vault / ".semanticignore").write_text("archive/\n")
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer2 = VaultIndexer(str(vault))
+            indexer2.rebuild_index()
+
+        basenames2 = {Path(v["path"]).name for v in indexer2.meta.values()}
+        assert ".semanticignore" not in basenames2
+
+    def test_ac8_cross_vault_independence(self, tmp_path: Path) -> None:
+        """AC8: ignore rules in vault A do not affect vault B."""
+        vault_a = tmp_path / "vaultA"
+        vault_b = tmp_path / "vaultB"
+        vault_a.mkdir()
+        vault_b.mkdir()
+
+        # Put secret.md in both vaults; only vault A ignores it
+        (vault_a / "secret.md").write_text("# Secret A")
+        (vault_a / "public.md").write_text("# Public A")
+        (vault_a / ".semanticignore").write_text("secret.md\n")
+
+        (vault_b / "secret.md").write_text("# Secret B")
+        (vault_b / "other.md").write_text("# Other B")
+        (vault_b / ".semanticignore").write_text("")  # no patterns
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer([str(vault_a), str(vault_b)])
+            indexer.rebuild_index()
+
+        indexed_paths = {v["path"] for v in indexer.meta.values()}
+
+        # vault A's secret.md must be excluded
+        assert str(vault_a / "secret.md") not in indexed_paths
+        # vault A's public.md must be present
+        assert str(vault_a / "public.md") in indexed_paths
+        # vault B's secret.md must be present (different vault, no matching rule)
+        assert str(vault_b / "secret.md") in indexed_paths
+        # vault B's other.md must be present
+        assert str(vault_b / "other.md") in indexed_paths
+
+    def test_ac9_rebuild_logs_skip_count_per_vault(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """AC9: rebuild_index emits one INFO log per vault matching the expected format."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "a.md").write_text("# A")
+        archive = vault / "archive"
+        archive.mkdir()
+        (archive / "old.md").write_text("# Old")
+        (vault / ".semanticignore").write_text("archive/\n")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(vault))
+
+            with caplog.at_level(logging.INFO, logger="semantic_search.indexer"):
+                indexer.rebuild_index()
+
+        pattern = re.compile(r"rebuild_index skipped (\d+) files for vault .+")
+        matching = [r for r in caplog.records if pattern.search(r.message)]
+        assert len(matching) >= 1, "Expected at least one skip-log record per vault"
+
+        # Find the record for our vault and verify the count
+        vault_log = next(
+            (r for r in matching if str(vault) in r.message),
+            None,
+        )
+        assert vault_log is not None, f"No log record for vault {vault}"
+        match = pattern.search(vault_log.message)
+        assert match is not None
+        assert int(match.group(1)) == 1, "Expected exactly 1 skipped file (archive/old.md)"
+
+    def test_backward_compat_single_positional_arg(self, tmp_path: Path) -> None:
+        """VaultIndexer(str(vault)) still works with no signature change."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "note.md").write_text("# Note")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(vault))
+            assert len(indexer.vault_paths) == 1
+
+    def test_backward_compat_keyword_args(self, tmp_path: Path) -> None:
+        """VaultIndexer with embedding_model= and duplicate_threshold= keywords still works."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "note.md").write_text("# Note")
+
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(
+                str(vault),
+                embedding_model="all-MiniLM-L6-v2",
+                duplicate_threshold=0.90,
+            )
+            assert indexer.duplicate_threshold == 0.90

@@ -45,4 +45,6 @@ ENV/
 /.dark-factory.log
 /prompts/log
 /specs/log
+/prompts/in-progress/*.lock
+/specs/in-progress/*.lock
 src/semantic_search/_version.py

@@ -228,6 +228,42 @@ CONTENT_PATH=/path/to/vault1,/path/to/vault2,/path/to/docs
 
 All directories are indexed together and searched as one unified index.
 
+### Excluding Files with `.semanticignore`
+
+Place a `.semanticignore` file at the root of any vault to exclude paths from indexing. Each vault uses its own rules independently; a missing `.semanticignore` means "index everything" (no change for existing vaults).
+
+**Syntax** — gitignore-style patterns powered by the `pathspec` library's `gitwildmatch` dialect. The full gitignore rule set applies:
+- Patterns are matched relative to the vault root.
+- Trailing `/` matches directories (and everything inside them): `archive/`
+- `**` matches across directory boundaries: `**/draft.md`
+- Leading `/` anchors a pattern to the vault root: `/scratch.md`
+- `!` negates a pattern (re-includes a previously excluded path): `!archive/keep.md`
+
+**Behaviour** — matching paths are excluded from:
+- Full index rebuilds (`rebuild_index`)
+- Single-file add/update events (`add_file_to_index`)
+- File-watcher `created`/`modified`/`moved` events
+
+The `.semanticignore` file itself is never indexed.
+
+**Runtime reload** — editing `.semanticignore` while the watcher is running triggers an atomic reload of that vault's rules. Subsequent file events immediately use the new patterns; no restart is required.
+
+**Example `.semanticignore`:**
+
+```gitignore
+# Exclude an entire directory
+archive/
+
+# Exclude all draft files in any subdirectory
+**/draft.md
+
+# Re-include one specific file from the excluded directory
+!archive/keep.md
+
+# Anchor a pattern to the vault root only
+/scratch.md
+```
+
 ## How It Works
 
 First run downloads a small embedding model (~90MB) and indexes your markdown files (<1s for typical vaults). The index auto-updates when files change via filesystem watcher.
