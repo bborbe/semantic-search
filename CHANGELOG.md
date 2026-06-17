@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
-- feat: add `/semantic-search:explorer` slash command — recursive vault exploration via wikilink-graph BFS over semantic-search results, with saturation-stop and hard-cap safeguards
+- feat: add `/semantic-search:explorer` command + `explorer-assistant` agent — goal-directed vault exploration via Planner/Generator/Evaluator loop with filesystem-shared state (`spec.md`/`notes/`/`visited.md`/`findings.md`/`synthesis.md`); planner interprets the question into sub-questions, generator picks one move per iteration (semantic search, vault read, wikilink follow, URL/repo fetch), evaluator decides covered/partial/open and returns CONTINUE/SATISFIED/INSUFFICIENT-NO-MORE-LEADS; stops on satisfied verdict, exhausted leads, hard-cap, or saturation guard
 
 ## v0.16.1
 
