@@ -1,11 +1,12 @@
 ---
-status: prompted
+status: verifying
 tags:
     - dark-factory
     - spec
 approved: "2026-06-17T09:58:22Z"
 generating: "2026-06-17T10:08:09Z"
 prompted: "2026-06-17T10:16:48Z"
+verifying: "2026-06-17T10:47:11Z"
 branch: dark-factory/semanticignore-support
 ---
 
@@ -115,3 +116,19 @@ Rationale: layer 1 ships the pure module so the predicate is fully tested before
 ## Do-Nothing Option
 
 If we ship nothing, users must keep moving unwanted notes out of the vault or accept polluted search results and wasted embedding cost. This is a recurring papercut — every new archive/scratch/template directory the user creates is another silent regression in result quality. The cost of doing this work is bounded (a few hundred lines plus tests, one dependency); the cost of not doing it grows with vault size. Recommend: build it.
+
+## Verification Result
+
+**Verified:** 2026-06-17T11:10:59Z (HEAD 9a0e39e)
+**Binary:** /Users/bborbe/Documents/workspaces/go/bin/dark-factory (v0.181.0)
+**Scenario:** No scenario file (spec uses inline verification via unit+integration tests). Walked all 13 ACs with fresh test runs + grep evidence against worktree HEAD 9a0e39e.
+**Evidence:**
+- AC1: `pyproject.toml` L19 `pathspec` inside `dependencies = [...]` block (runtime, not dev)
+- AC2: `pytest tests/test_ignore.py -v` → 17 passed including missing/empty/simple/directory/double-star/negation/anchored/self-ignored
+- AC3,4,7,8,9: `pytest tests/test_indexer.py -v` → `TestVaultIgnoreIntegration::test_ac{3,4,7,8,9}_*` all PASSED (46 passed total)
+- AC5,6: `pytest tests/test_watcher.py -v` → `TestVaultIgnoreGate::test_ignored_path_not_queued_on_{created,modified}` + `test_runtime_reload_on_semanticignore_modified` PASSED (26 passed total)
+- AC10: `tests/test_ignore.py::TestVaultIgnoreMalformedPattern::test_malformed_pattern_logs_error_with_line_number` PASSED
+- AC11: `make precommit` → 135 passed, ruff clean, mypy strict clean, exit 0
+- AC12: `grep -n '.semanticignore' README.md` → 4 hits incl. section header at L231 "Excluding Files with `.semanticignore`"
+- AC13: `grep -nA5 '## Unreleased' CHANGELOG.md` → 3 feat bullets at L13-15 mentioning `.semanticignore`
+**Verdict:** PASS
