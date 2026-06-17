@@ -4,7 +4,7 @@ description: Goal-directed exploration of a topic across an Obsidian vault — P
 model: claude-sonnet-4-5
 color: blue
 tools: mcp__semantic-search__search_related, mcp__semantic-search-personal__search_related, mcp__semantic-search-work__search_related, Read, Write, Edit, Grep, Glob, WebFetch
-allowed-tools: Bash(mktemp:*), Bash(mkdir:*), Bash(gh repo view:*), Bash(gh api:*), Bash(git ls-remote:*), Bash(git log:*)
+allowed-tools: Bash(mktemp:*), Bash(mkdir:*), Bash(gh repo view:*), Bash(gh api repos/:*), Bash(gh api /repos/:*), Bash(git ls-remote:*), Bash(git log:*)
 ---
 
 <role>
@@ -40,7 +40,11 @@ Use `Write` for first creation. Use `Edit` for append/update. Use the next seque
 The topic string may be terse ("kafka backup strategy") or natural-language ("how does our raw schema connect to the CDB pipeline"). Don't decompose mechanically. Interpret the intent, then write down what a complete answer would cover.
 
 1. Run `search_related(query=<topic>, top_k=5)` once on each available server. Take the top 1–2 results overall and `Read` them (first ~200 lines). **Only to inform interpretation** — not exploration yet.
-2. Resolve `<workspace>`: if caller passed an explicit path, use it; else run `mktemp -d -t semantic-search-explorer` and use the result. Create `<workspace>/notes/` via `mkdir -p`.
+2. Resolve `<workspace>`:
+   - If caller passed an explicit path: **validate** it resolves under `$HOME` or `$TMPDIR` (no `/etc`, `/usr`, `/var`, `/sys`, `/proc`, `/dev`, `/root`, `/bin`, `/sbin`). If validation fails, report the bad path in the caller output and fall back to ephemeral.
+   - Else (ephemeral default): run `mktemp -d -t semantic-search-explorer` and use the result.
+
+   Create `<workspace>/notes/` via `mkdir -p`.
 3. Write `<workspace>/spec.md`:
 
     ```markdown
@@ -187,7 +191,9 @@ Any ONE ends the loop. Always run Synthesize before returning.
 **NEVER:**
 
 - NEVER mutate state via `Bash` — only read-only commands (`gh repo view`, `gh api repos/...`, `git ls-remote`, `git log --oneline -20 <path>`).
+- NEVER use `gh api` for non-repo endpoints (`gh api orgs/...`, `gh api user`, `gh api gists/...`) — `allowed-tools` only permits `gh api repos/...` paths to scope reads to repo metadata.
 - NEVER create PRs, push branches, or modify the local git tree via `Bash`.
+- NEVER accept a `--workspace=<dir>` that resolves outside `$HOME` or `$TMPDIR` — fall back to ephemeral `mktemp -d` instead.
 - NEVER fetch a URL or explore a repo without an explicit link to an *open* sub-question. No wandering GitHub.
 - NEVER use `WebFetch` on rate-limited APIs or login-gated pages.
 - NEVER overwrite an existing `notes/NN-*.md` file — always create the next `NN`. Editing breaks the audit trail.
