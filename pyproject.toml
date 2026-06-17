@@ -16,6 +16,7 @@ dependencies = [
     "faiss-cpu",
     "watchdog",
     "numpy",
+    "pathspec",
     "pyyaml",
     "platformdirs>=4.0"
 ]

@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: add `VaultIgnore` module (`src/semantic_search/ignore.py`) — loads `.semanticignore` from vault root, compiles gitignore-style patterns via `pathspec`, and exposes `is_ignored(path)` predicate; oversized (>1 MiB) or unreadable files fall back to accept-all with ERROR log; malformed pattern lines (bad character ranges etc.) log ERROR with line number and are skipped while remaining patterns still apply; `.semanticignore` itself is always reported as ignored
+
 ## v0.17.0
 
 - feat: add `/semantic-search:explorer` command + `explorer-assistant` agent — goal-directed vault exploration via Planner/Generator/Evaluator loop with filesystem-shared state (`spec.md`/`notes/`/`visited.md`/`findings.md`/`synthesis.md`); planner interprets the question into sub-questions, generator picks one move per iteration (semantic search, vault read, wikilink follow, URL/repo fetch), evaluator decides covered/partial/open and returns CONTINUE/SATISFIED/INSUFFICIENT-NO-MORE-LEADS; stops on satisfied verdict, exhausted leads, hard-cap, or saturation guard

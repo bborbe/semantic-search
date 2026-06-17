@@ -1,8 +1,12 @@
 ---
+status: prompted
 tags:
-  - dark-factory
-  - spec
-status: draft
+    - dark-factory
+    - spec
+approved: "2026-06-17T09:58:22Z"
+generating: "2026-06-17T10:08:09Z"
+prompted: "2026-06-17T10:16:48Z"
+branch: dark-factory/semanticignore-support
 ---
 
 ## Summary
