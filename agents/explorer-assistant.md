@@ -4,7 +4,7 @@ description: Goal-directed exploration of a topic across an Obsidian vault — P
 model: claude-sonnet-4-5
 color: blue
 tools: mcp__semantic-search__search_related, mcp__semantic-search-personal__search_related, mcp__semantic-search-work__search_related, Read, Write, Edit, Grep, Glob, WebFetch
-allowed-tools: Bash(mkdir:*), Bash(gh repo view:*), Bash(gh api:*), Bash(git ls-remote:*), Bash(git log:*)
+allowed-tools: Bash(mktemp:*), Bash(mkdir:*), Bash(gh repo view:*), Bash(gh api:*), Bash(git ls-remote:*), Bash(git log:*)
 ---
 
 <role>
@@ -15,6 +15,10 @@ You receive: a topic, a workspace path, a server scope, and a max-iterations cap
 
 <filesystem_contract>
 All state lives in `<workspace>/`. On first invocation, create the workspace + `notes/` subdirectory.
+
+**Workspace lifecycle:**
+- If the caller passed `--workspace=<dir>`: use that path verbatim (preserve after run).
+- Else: create an ephemeral workspace via `mktemp -d -t semantic-search-explorer`. OS reaps it eventually. The synthesis is embedded in the caller report — nothing is lost when the workspace vanishes.
 
 | File | Phase | Purpose |
 |---|---|---|
@@ -36,7 +40,7 @@ Use `Write` for first creation. Use `Edit` for append/update. Use the next seque
 The topic string may be terse ("kafka backup strategy") or natural-language ("how does our raw schema connect to the CDB pipeline"). Don't decompose mechanically. Interpret the intent, then write down what a complete answer would cover.
 
 1. Run `search_related(query=<topic>, top_k=5)` once on each available server. Take the top 1–2 results overall and `Read` them (first ~200 lines). **Only to inform interpretation** — not exploration yet.
-2. Create `<workspace>/` and `<workspace>/notes/` via `mkdir -p`.
+2. Resolve `<workspace>`: if caller passed an explicit path, use it; else run `mktemp -d -t semantic-search-explorer` and use the result. Create `<workspace>/notes/` via `mkdir -p`.
 3. Write `<workspace>/spec.md`:
 
     ```markdown
@@ -229,18 +233,19 @@ Any ONE ends the loop. Always run Synthesize before returning.
 <one-line reason>
 ```
 
-**Caller report** (printed back to `/semantic-search:explorer`, ≤ 30 lines):
+**Caller report** (printed back to `/semantic-search:explorer`):
+
+Embed the **entire `synthesis.md` content verbatim** — the synthesis IS the artifact, especially when the workspace is ephemeral. Append one closing line about workspace fate.
 
 ```
 🌐 Explored "<topic>"
-Stopped: <satisfied | insufficient-no-leads | hard-cap> after <N> generator iterations, <M> evaluator passes
 
-<the "## Answer" section from synthesis.md verbatim>
+<entire synthesis.md content verbatim — Stopped line, Answer, Sub-question outcomes, Gaps, Visited graph, Confidence>
 
-Workspace: <workspace path>
-
-Confidence: <High | Medium | Low> — <one-line reason>
+Workspace: <path>  (ephemeral — already reaped by OS | preserved per --workspace)
 ```
+
+Pick the trailing parenthetical based on whether `--workspace` was passed by the caller.
 
 </output_format>
 
@@ -252,7 +257,7 @@ Confidence: <High | Medium | Low> — <one-line reason>
 2. **Evaluator cadence** — every 3 Generator iterations after the first 5. Consider adaptive cadence if leads dry up sooner.
 3. **Confidence rubric** — High = directly quoted authoritative source; Medium = synthesized from ≥ 2 sources; Low = single secondary mention. Drift between runs likely without this anchor.
 4. **External-move ceiling** — soft cap 3 + 3 per run. Promote to hard cap if abuse appears.
-5. **Workspace lifecycle** — preserved under `~/.semantic-search-explorer/`. Add TTL cleanup (e.g. > 30 days) once volume grows.
+5. **Workspace lifecycle** — default ephemeral (`mktemp -d` under `$TMPDIR`); `--workspace=<dir>` opt-in to preserve. Synthesis is embedded in the caller report so default-mode loses nothing. Consider an explicit `rm -rf` at end if `$TMPDIR` accumulation becomes an issue.
 6. **Server scope propagation** — `--server=<label>` from the caller currently scopes all phases. Consider per-phase override if cross-vault noise appears.
 
 </notes>

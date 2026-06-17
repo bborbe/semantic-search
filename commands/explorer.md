@@ -30,7 +30,9 @@ description: Goal-directed vault exploration — Planner/Generator/Evaluator loo
 
 ### 2. Compute the workspace path
 
-Default: `$HOME/.semantic-search-explorer/<topic-slug>-<unix-ts>/`. The agent creates the directory on first write and owns the filesystem layout. Preserved after the run for inspection.
+Default: **ephemeral** — agent creates via `mktemp -d -t semantic-search-explorer` (under `$TMPDIR`; OS cleans up). The synthesis is embedded in the caller report so nothing is lost when the workspace vanishes.
+
+Pass `--workspace=<dir>` to **preserve** the workspace for inspection (debug "why did saturation fire on iter 4", inspect intermediate `notes/`, etc.).
 
 ### 3. Invoke the explorer-assistant agent
 
@@ -52,4 +54,4 @@ Print the agent's report verbatim. Always include the workspace path so the user
 - **Filesystem state, not context.** Long explorations don't blow context window — each Evaluator pass reads workspace files fresh.
 - **External exploration is in scope.** When `spec.md` or `notes/` reference git repos or URLs, the agent may fetch them (`gh`, `git`, `WebFetch`) — bounded by `--max-iters`.
 - For "find one specific file" use `/semantic-search:search`; for "synthesize top-N hits without exploration" use `/semantic-search:research`.
-- Workspace dirs accumulate under `~/.semantic-search-explorer/`. Clean periodically — they are not auto-deleted.
+- Default workspace is ephemeral (`mktemp -d`); the synthesis lives in the caller's output. Use `--workspace=<dir>` only when post-run inspection is wanted.
