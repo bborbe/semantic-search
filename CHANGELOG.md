@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: add `/semantic-search:explorer` command + `explorer-assistant` agent — goal-directed vault exploration via Planner/Generator/Evaluator loop with filesystem-shared state (`spec.md`/`notes/`/`visited.md`/`findings.md`/`synthesis.md`); planner interprets the question into sub-questions, generator picks one move per iteration (semantic search, vault read, wikilink follow, URL/repo fetch), evaluator decides covered/partial/open and returns CONTINUE/SATISFIED/INSUFFICIENT-NO-MORE-LEADS; stops on satisfied verdict, exhausted leads, hard-cap, or saturation guard
+
 ## v0.16.1
 
 - docs: add CI and DeepWiki badges to README
