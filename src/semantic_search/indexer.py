@@ -20,6 +20,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
+from semantic_search.ignore import VaultIgnore
+
 logger = logging.getLogger(__name__)
 
 # Extract inline markdown tags: #project, #team-a/sub
@@ -60,6 +62,7 @@ class VaultIndexer:
         self._path_to_idx: dict[str, int] = {}  # reverse lookup: path -> index position
         self._tombstones: set[int] = set()  # logically-deleted idx positions
         self._index_lock = threading.Lock()  # protects all FAISS index operations
+        self._ignores: dict[Path, VaultIgnore] = {vp: VaultIgnore(vp) for vp in self.vault_paths}
         self._load_index()
 
     def _migrate_from_tempdir(self, content_hash: str) -> None:
@@ -262,6 +265,15 @@ class VaultIndexer:
         if not file_path.exists() or file_path.suffix != ".md":
             return
 
+        resolved = file_path.resolve()
+        owning_root: Path | None = None
+        for vp in self.vault_paths:
+            if resolved.is_relative_to(vp.resolve()):
+                owning_root = vp
+                break
+        if owning_root is not None and self._is_ignored(owning_root, file_path):
+            return
+
         content = self._read_file(file_path)
         if content is None:
             return
@@ -320,6 +332,21 @@ class VaultIndexer:
             )
             self.rebuild_index()
 
+    def _is_ignored(self, vault_root: Path, file_path: Path) -> bool:
+        """Return True iff file_path is excluded by vault_root's .semanticignore rules.
+
+        Args:
+            vault_root: The vault root whose ignore rules to consult.
+            file_path: The file path to test. May be absolute or relative.
+
+        Returns:
+            True if the file matches an ignore pattern, False otherwise.
+        """
+        vault_ignore = self._ignores.get(vault_root)
+        if vault_ignore is None:
+            return False
+        return vault_ignore.is_ignored(file_path)
+
     def rebuild_index(self) -> None:
         """Rebuild entire index from all vault paths."""
         # Build new index and metadata outside the lock (embedding is slow)
@@ -328,9 +355,13 @@ class VaultIndexer:
         new_path_to_idx: dict[str, int] = {}
         idx = 0
         for vault_path in self.vault_paths:
+            skipped = 0
             for file_path in vault_path.rglob("*.md"):
                 # Skip files in .semantic-search directory
                 if ".semantic-search" in str(file_path):
+                    continue
+                if self._is_ignored(vault_path, file_path):
+                    skipped += 1
                     continue
                 try:
                     content = self._read_file(file_path)
@@ -349,6 +380,7 @@ class VaultIndexer:
                         logger.info(f"[Indexer] Indexed {idx} files...")
                 except Exception as e:
                     logger.error(f"[Indexer] Failed to index {file_path}: {e}")
+            logger.info(f"rebuild_index skipped {skipped} files for vault {vault_path}")
         # Swap atomically under the lock
         with self._index_lock:
             self.index = new_index
