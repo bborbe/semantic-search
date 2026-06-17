@@ -1,5 +1,5 @@
 ---
-status: verifying
+status: completed
 tags:
     - dark-factory
     - spec
@@ -7,6 +7,7 @@ approved: "2026-06-17T09:58:22Z"
 generating: "2026-06-17T10:08:09Z"
 prompted: "2026-06-17T10:16:48Z"
 verifying: "2026-06-17T10:47:11Z"
+completed: "2026-06-17T11:28:15Z"
 branch: dark-factory/semanticignore-support
 ---
 
