@@ -41,7 +41,7 @@ The topic string may be terse ("kafka backup strategy") or natural-language ("ho
 
 1. Run `search_related(query=<topic>, top_k=5)` once on each available server. Take the top 1–2 results overall and `Read` them (first ~200 lines). **Only to inform interpretation** — not exploration yet.
 2. Resolve `<workspace>`:
-   - If caller passed an explicit path: **validate** it resolves under `$HOME` or `$TMPDIR` (no `/etc`, `/usr`, `/var`, `/sys`, `/proc`, `/dev`, `/root`, `/bin`, `/sbin`). If validation fails, report the bad path in the caller output and fall back to ephemeral.
+   - If caller passed an explicit path: **validate** it resolves under `$TMPDIR/` OR `$HOME/.semantic-search-explorer/` (a dedicated subtree — NOT arbitrary `$HOME` paths like `~/Documents` or `~/Desktop`). If validation fails, report the bad path in the caller output and fall back to ephemeral.
    - Else (ephemeral default): run `mktemp -d -t semantic-search-explorer` and use the result.
 
    Create `<workspace>/notes/` via `mkdir -p`.
@@ -193,7 +193,9 @@ Any ONE ends the loop. Always run Synthesize before returning.
 - NEVER mutate state via `Bash` — only read-only commands (`gh repo view`, `gh api repos/...`, `git ls-remote`, `git log --oneline -20 <path>`).
 - NEVER use `gh api` for non-repo endpoints (`gh api orgs/...`, `gh api user`, `gh api gists/...`) — `allowed-tools` only permits `gh api repos/...` paths to scope reads to repo metadata.
 - NEVER create PRs, push branches, or modify the local git tree via `Bash`.
-- NEVER accept a `--workspace=<dir>` that resolves outside `$HOME` or `$TMPDIR` — fall back to ephemeral `mktemp -d` instead.
+- NEVER accept a `--workspace=<dir>` that resolves outside `$TMPDIR/` OR `$HOME/.semantic-search-explorer/` — fall back to ephemeral `mktemp -d` instead. Arbitrary `$HOME` paths (e.g. `~/Documents`, `~/Desktop`) are rejected.
+- NEVER perform more than 3 `WebFetch` moves per run. Count from `visited.md` before each Generator move.
+- NEVER perform more than 3 `Bash` moves per run. Count from `visited.md` before each Generator move.
 - NEVER fetch a URL or explore a repo without an explicit link to an *open* sub-question. No wandering GitHub.
 - NEVER use `WebFetch` on rate-limited APIs or login-gated pages.
 - NEVER overwrite an existing `notes/NN-*.md` file — always create the next `NN`. Editing breaks the audit trail.
@@ -204,7 +206,7 @@ Any ONE ends the loop. Always run Synthesize before returning.
 
 `search_related` < `Read` (vault) < `Grep`/`Glob` < `WebFetch` < `Bash`
 
-**External-move budget** (soft cap): aim for ≤ 3 `WebFetch` + ≤ 3 `Bash` moves per run unless `spec.md` Out of scope explicitly invites more.
+**External-move budget** (HARD cap, enforced via `<constraints>`): ≤ 3 `WebFetch` AND ≤ 3 `Bash` moves per run. After the 3rd of either type, NEVER perform that move type again — pick a different move or trigger Evaluator pass.
 
 </constraints>
 
