@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [003-semanticignore-support]
+summary: 'Added .semanticignore documentation section to README.md under Configuration; CHANGELOG.md already had an Unreleased section with three feat: entries from prompts 1-3; make precommit exits 0 with 135 tests passing.'
+container: semantic-search-semanticignore-exec-022-semanticignore-docs
+dark-factory-version: v0.181.0
 created: "2026-06-17T00:00:00Z"
 queued: "2026-06-17T10:26:28Z"
+started: "2026-06-17T10:46:25Z"
+completed: "2026-06-17T10:47:11Z"
 branch: dark-factory/semanticignore-support
 ---
 
