@@ -26,6 +26,21 @@ The git tag itself is the **fifth** binding — `hatch-vcs` derives `__version__
 
 The check is **release-time only** — `make precommit` does NOT run it. Run the manual check (below) before tagging or before pushing plugin JSON bumps.
 
+### Alignment applies to EVERY release, including binary-only ones
+
+A binary-only change (only `src/`, `tests/`, `scenarios/` touched — nothing under `commands/`, `agents/`, `docs/`, `skills/`) still advances the shared version sequence, so it still bumps all three plugin JSON fields.
+
+This is easy to get wrong, because §[When plugin JSONs need follow-up](#when-plugin-jsons-need-follow-up) reads as though the JSONs only ever move when a plugin-surface directory changes. That section answers "when does the **plugin surface** need re-publishing", not "when may the four version strings diverge". The answer to the second question is **never at release time**.
+
+Concretely, for a binary-only release:
+
+1. Rename `## Unreleased` → `## vX.Y.Z` in `CHANGELOG.md`.
+2. Bump all three `.claude-plugin/` fields to the same `X.Y.Z`.
+3. `make release-check` — must print `✅ all four versions equal`.
+4. Commit `release vX.Y.Z`, tag, push both.
+
+Skipping step 2 leaves `make check-versions` failing until the next plugin release — the exact trap listed under [Common plugin-release mistakes](#common-plugin-release-mistakes) ("CHANGELOG advances but plugin stays at old version").
+
 **Why not in `precommit`**: every refactor commit would otherwise have to bump plugin JSONs in lockstep, burning release numbers on internal work. (Vault-cli learned this the hard way; we apply the same lesson here.)
 
 ## The release gate (run BEFORE `dark-factory prompt approve`)
@@ -117,7 +132,16 @@ After a successful autoRelease, both `git status` (clean) and `git rev-list @{u}
 
 ### When plugin JSONs need follow-up
 
-`autoRelease` bumps the **binary**. A prompt that touches `commands/`, `agents/`, `docs/`, or `skills/` is shipped as a binary tag but the **plugin** version in `.claude-plugin/*.json` does NOT auto-bump. After such a prompt completes, follow the [Plugin release](#plugin-release-manual) procedure manually to bring the three JSON fields up to the latest tag.
+`autoRelease` bumps the **binary**. It never edits `.claude-plugin/*.json` — regardless of what the prompt touched. So **every** auto-tag leaves the repo transiently misaligned: `CHANGELOG.md` shows the new `vX.Y.Z` while the three JSON fields still show the previous one, and `make check-versions` fails until an operator bumps them.
+
+Two cases, same remedy:
+
+| Prompt touched | Why the JSONs must catch up |
+|----------------|-----------------------------|
+| `commands/`, `agents/`, `docs/`, `skills/` | The plugin surface actually changed — consumers need the new version to pick it up |
+| Only `src/`, `tests/`, `scenarios/` | The plugin surface is unchanged, but the shared version sequence advanced — see [Alignment applies to every release](#alignment-applies-to-every-release-including-binary-only-ones) |
+
+In both cases, follow the [Plugin release](#plugin-release-manual) procedure to bring the three JSON fields up to the latest tag. Do the bump **before** tagging where possible (one `release vX.Y.Z` commit covering CHANGELOG + JSONs), so the repo is never pushed in a state where `make check-versions` fails.
 
 ## GitHub Release (manual — when to surface a milestone)
 
