@@ -35,7 +35,7 @@ Validates that `semantic-search-http` serves `GET /content` over a real socket f
 - [ ] Full mode body parses as JSON and has `path`, `content`, `mode == "full"`: `jq -e '.path and .content and .mode == "full"' /tmp/scenario-004-full.json` exits 0
 - [ ] Full-mode `content` includes the fixture title: `jq -e '.content | contains("Kubernetes deployment notes")' /tmp/scenario-004-full.json` exits 0
 - [ ] Snippet mode body has `mode == "snippet"` and contains the queried token: `jq -e '.mode == "snippet" and (.content | contains("autoscaling"))' /tmp/scenario-004-snippet.json` exits 0
-- [ ] Snippet content is strictly shorter than full content (proves narrowing actually happened): `jq -es '.[0].content | length as $snip | input | .content | length > $snip' /tmp/scenario-004-snippet.json /tmp/scenario-004-full.json` exits 0
+- [ ] Snippet content is strictly shorter than full content (proves narrowing actually happened): `jq -es '(.[0].content|length) as $snip | (.[1].content|length) > $snip' /tmp/scenario-004-snippet.json /tmp/scenario-004-full.json` exits 0
 - [ ] Server log shows `/content` route at startup: `grep -q '/content' /tmp/scenario-004-server.log`
 
 ## Cleanup
