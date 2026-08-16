@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.18.1
 
 - fix: serialize index compaction — only one rebuild runs at a time, and requests arriving during an in-flight rebuild are skipped instead of starting their own. A high-churn vault previously drove the indexer into unbounded parallel rebuilds that saturated the GIL and never completed.
 - fix: re-apply files added or removed during a compaction rebuild, so edits made while the index rebuilds are no longer discarded by the post-rebuild swap.
