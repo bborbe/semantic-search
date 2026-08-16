@@ -2,6 +2,7 @@
 
 import logging
 import re
+import threading
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -493,6 +494,162 @@ class TestVaultIndexerIncremental:
 
             assert rebuild_calls == []
 
+    def test_compaction_is_not_reentrant(self, temp_vault: Path) -> None:
+        """Concurrent _maybe_compact calls must result in exactly one rebuild.
+
+        Several threads call _maybe_compact while the tombstone ratio is above
+        threshold. The atomic check-and-set under _compact_lock means only the
+        first thread proceeds; the rest skip while the rebuild is in flight.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            vault = temp_vault
+            for i in range(9):
+                (vault / f"note{i}.md").write_text(f"# Note {i}")
+
+            indexer = VaultIndexer(str(vault))
+
+            # Force 30% tombstones (3 of 10): compaction MUST fire
+            idxs = list(indexer._path_to_idx.values())[:3]
+            with indexer._index_lock:
+                for idx in idxs:
+                    indexer._tombstones.add(idx)
+
+            rebuild_started = threading.Event()
+            rebuild_release = threading.Event()
+            rebuild_calls: list[int] = []
+
+            def blocking_rebuild() -> None:
+                rebuild_calls.append(1)
+                rebuild_started.set()
+                rebuild_release.wait(10)
+
+            indexer.rebuild_index = blocking_rebuild  # type: ignore[method-assign]
+
+            # Release all workers together so the overlap window is real, and
+            # wait for the 4 skipping workers to finish before letting the
+            # rebuild thread proceed — removes any timing flakiness.
+            barrier = threading.Barrier(5)
+            returned: list[int] = []
+            returned_lock = threading.Lock()
+            all_returned = threading.Event()
+
+            def worker() -> None:
+                barrier.wait()
+                indexer._maybe_compact()
+                with returned_lock:
+                    returned.append(1)
+                    if len(returned) >= 4:
+                        all_returned.set()
+
+            threads = [threading.Thread(target=worker) for _ in range(5)]
+            for t in threads:
+                t.start()
+
+            assert rebuild_started.wait(10), "rebuild never started"
+            assert all_returned.wait(10), "skipping workers did not finish _maybe_compact"
+
+            rebuild_release.set()
+            for t in threads:
+                t.join(10)
+
+            assert len(rebuild_calls) == 1
+
+    def test_compaction_flag_reset_on_exception(self, temp_vault: Path) -> None:
+        """_compacting must be reset (via finally) when rebuild_index raises."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            vault = temp_vault
+            for i in range(9):
+                (vault / f"note{i}.md").write_text(f"# Note {i}")
+
+            indexer = VaultIndexer(str(vault))
+
+            # Force 30% tombstones (3 of 10): compaction MUST fire
+            idxs = list(indexer._path_to_idx.values())[:3]
+            with indexer._index_lock:
+                for idx in idxs:
+                    indexer._tombstones.add(idx)
+
+            def boom() -> None:
+                raise RuntimeError("simulated rebuild failure")
+
+            indexer.rebuild_index = boom  # type: ignore[method-assign]
+
+            with pytest.raises(RuntimeError, match="simulated rebuild failure"):
+                indexer._maybe_compact()
+
+            # The flag must have been cleared in the finally block
+            assert indexer._compacting is False
+
+            # A subsequent call with the ratio still above threshold must retry
+            retried: list[int] = []
+            indexer.rebuild_index = lambda: retried.append(1)  # type: ignore[method-assign]
+            indexer._maybe_compact()
+            assert len(retried) == 1
+
+    def test_dirty_paths_recorded_during_compaction(self, temp_vault: Path) -> None:
+        """Paths mutated while compacting are recorded and replayed afterwards."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            indexer._maybe_compact = lambda: None  # type: ignore[method-assign]
+            indexer._compacting = True
+
+            added_path = temp_vault / "new-note.md"
+            added_path.write_text("# New note")
+            removed_path = temp_vault / "test-note.md"
+
+            indexer.add_file_to_index(added_path)
+            indexer.remove_file_from_index(removed_path)
+
+            assert str(added_path) in indexer._dirty_during_compact
+            assert str(removed_path) in indexer._deleted_during_compact
+
+            # Stub the replayed methods so the drain is observable without the
+            # replayed operations re-recording themselves
+            remove_mock = Mock()
+            add_mock = Mock()
+            indexer.remove_file_from_index = remove_mock  # type: ignore[method-assign]
+            indexer.add_file_to_index = add_mock  # type: ignore[method-assign]
+
+            indexer._replay_dirty_after_compact()
+
+            remove_mock.assert_called_once_with(str(removed_path))
+            add_mock.assert_called_once_with(str(added_path))
+            assert indexer._dirty_during_compact == set()
+            assert indexer._deleted_during_compact == set()
+
+    def test_no_dirty_recording_on_normal_path(self, temp_vault: Path) -> None:
+        """When no compaction is in flight, mutations leave the dirty sets empty."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            indexer._maybe_compact = lambda: None  # type: ignore[method-assign]
+            assert indexer._compacting is False
+
+            indexer.add_file_to_index(temp_vault / "test-note.md")
+            indexer.remove_file_from_index(temp_vault / "test-note.md")
+
+            assert indexer._dirty_during_compact == set()
+            assert indexer._deleted_during_compact == set()
+
     def test_index_cache_survives_restart(self, temp_vault: Path) -> None:
         """A second VaultIndexer with the same paths loads the on-disk cache
         without re-embedding every file. With PID removed from index_dir, the
@@ -537,6 +694,60 @@ class TestVaultIndexerIncremental:
 
             indexer2 = VaultIndexer(str(vault))
             assert target_idx in indexer2._tombstones
+
+
+class TestVaultIndexerPersistence:
+    """Tests for atomic cache writes and corrupt-cache recovery."""
+
+    def test_atomic_save_leaves_no_temp_files(self, temp_vault: Path) -> None:
+        """save_index leaves exactly the two final artifacts — no temp leftovers."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            indexer.save_index()
+
+            files = sorted(p.name for p in indexer.index_dir.iterdir())
+            assert files == ["index_meta.json", "vector_index.faiss"]
+
+    def test_corrupt_meta_recovers_by_rebuilding(self, temp_vault: Path) -> None:
+        """A truncated index_meta.json is discarded and rebuilt, not fatal."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer1 = VaultIndexer(str(temp_vault))
+            assert len(indexer1.meta) == 1
+
+            # Mirror the real failure: a crash mid-save leaves a prefix of the JSON
+            meta_content = indexer1.meta_file.read_text()
+            indexer1.meta_file.write_text(meta_content[: len(meta_content) // 2])
+
+            indexer2 = VaultIndexer(str(temp_vault))
+            assert len(indexer2.meta) == 1
+            assert str(temp_vault / "test-note.md") in {v["path"] for v in indexer2.meta.values()}
+
+    def test_corrupt_faiss_index_recovers_by_rebuilding(self, temp_vault: Path) -> None:
+        """A damaged vector_index.faiss is discarded and rebuilt, not fatal."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer1 = VaultIndexer(str(temp_vault))
+            assert len(indexer1.meta) == 1
+
+            indexer1.index_file.write_bytes(b"\x00\x01\x02\x03NOT_A_FAISS_INDEX" * 100)
+
+            indexer2 = VaultIndexer(str(temp_vault))
+            assert len(indexer2.meta) == 1
+            assert str(temp_vault / "test-note.md") in {v["path"] for v in indexer2.meta.values()}
 
 
 class TestCacheMigration:

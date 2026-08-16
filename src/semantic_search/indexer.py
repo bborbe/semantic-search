@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import os
 import re
 import tempfile
 import threading
@@ -62,6 +63,10 @@ class VaultIndexer:
         self._path_to_idx: dict[str, int] = {}  # reverse lookup: path -> index position
         self._tombstones: set[int] = set()  # logically-deleted idx positions
         self._index_lock = threading.Lock()  # protects all FAISS index operations
+        self._compact_lock: threading.Lock = threading.Lock()  # guards compaction flag + dirty sets
+        self._compacting: bool = False  # True while a compaction rebuild is in flight
+        self._dirty_during_compact: set[str] = set()  # paths added/updated during compaction
+        self._deleted_during_compact: set[str] = set()  # paths removed during compaction
         self._ignores: dict[Path, VaultIgnore] = {vp: VaultIgnore(vp) for vp in self.vault_paths}
         self._load_index()
 
@@ -99,18 +104,44 @@ class VaultIndexer:
         self.index_dir.mkdir(parents=True, exist_ok=True)
 
         if self.index_file.exists() and self.meta_file.exists():
-            with self._index_lock:
-                self.index = faiss.read_index(str(self.index_file))
-                with open(self.meta_file) as f:
-                    data = json.load(f)
-                # Handle both old (bare dict) and new ({"meta": ..., "tombstones": ...}) formats
-                if isinstance(data, dict) and "meta" in data:
-                    self.meta = data["meta"]
-                    self._tombstones = set(data.get("tombstones", []))
-                else:
-                    self.meta = data
+            try:
+                with self._index_lock:
+                    self.index = faiss.read_index(str(self.index_file))
+                    with open(self.meta_file) as f:
+                        data = json.load(f)
+                    # Handle both old (bare dict) and new ({"meta": ..., "tombstones": ...}) formats
+                    if isinstance(data, dict) and "meta" in data:
+                        self.meta = data["meta"]
+                        self._tombstones = set(data.get("tombstones", []))
+                    else:
+                        self.meta = data
+                        self._tombstones = set()
+                    self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
+            except (
+                json.JSONDecodeError,
+                OSError,
+                ValueError,
+                RuntimeError,
+                KeyError,
+                TypeError,
+            ) as e:
+                # A truncated or damaged cache (e.g. a crash mid-save) must not
+                # brick the service: discard it and rebuild from the vault.
+                # A truncated meta raises json.JSONDecodeError; FAISS raises
+                # RuntimeError on a damaged index file; KeyError/TypeError/ValueError
+                # cover a meta file that parses but has an unexpected shape.
+                logger.warning(
+                    f"[Indexer] Corrupt or unreadable index cache "
+                    f"({self.index_file.name}, {self.meta_file.name}): {e}; "
+                    f"discarding and rebuilding"
+                )
+                with self._index_lock:
+                    self.index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
+                    self.meta = {}
+                    self._path_to_idx = {}
                     self._tombstones = set()
-                self._path_to_idx = {v["path"]: int(k) for k, v in self.meta.items()}
+                self.rebuild_index()
+                return
             logger.info(
                 f"[Indexer] Loaded index with {len(self.meta)} entries, "
                 f"{len(self._tombstones)} tombstones"
@@ -124,17 +155,34 @@ class VaultIndexer:
             self.rebuild_index()
 
     def save_index(self) -> None:
-        """Persist index to disk."""
+        """Persist index to disk atomically.
+
+        Both artifacts are written to sibling temp files in the same directory
+        (same filesystem) and renamed into place, so a crash mid-write can never
+        leave a truncated index_meta.json behind. The FAISS index is written and
+        renamed before the meta JSON so the meta never references vectors that
+        were not persisted. Temp files are removed on failure so repeated
+        failures cannot accumulate garbage.
+        """
         with self._index_lock:
-            faiss.write_index(self.index, str(self.index_file))
-            with open(self.meta_file, "w") as f:
-                json.dump(
-                    {
-                        "meta": self.meta,
-                        "tombstones": sorted(self._tombstones),
-                    },
-                    f,
-                )
+            faiss_tmp = self.index_dir / "vector_index.faiss.tmp"
+            meta_tmp = self.index_dir / "index_meta.json.tmp"
+            try:
+                faiss.write_index(self.index, str(faiss_tmp))
+                with open(meta_tmp, "w") as f:
+                    json.dump(
+                        {
+                            "meta": self.meta,
+                            "tombstones": sorted(self._tombstones),
+                        },
+                        f,
+                    )
+                os.replace(faiss_tmp, self.index_file)
+                os.replace(meta_tmp, self.meta_file)
+            finally:
+                for tmp in (faiss_tmp, meta_tmp):
+                    if tmp.exists():
+                        tmp.unlink()
         logger.info("[Indexer] Index saved")
 
     def _read_file(self, file_path: Path) -> str | None:
@@ -294,6 +342,13 @@ class VaultIndexer:
             self.meta[str(new_idx)] = {"path": path_str}
             self._path_to_idx[path_str] = new_idx
 
+        # Record the mutation so a compaction rebuild in flight re-applies it
+        # after the post-rebuild swap (which would otherwise discard it).
+        with self._compact_lock:
+            if self._compacting:
+                self._dirty_during_compact.add(path_str)
+                self._deleted_during_compact.discard(path_str)
+
         self.save_index()
         self._maybe_compact()
         logger.info(f"[Indexer] Indexed {file_path} (idx={new_idx})")
@@ -310,6 +365,14 @@ class VaultIndexer:
                 return
             self._tombstones.add(old_idx)
             self.meta.pop(str(old_idx), None)
+
+        # Record the mutation so a compaction rebuild in flight re-applies it
+        # after the post-rebuild swap (which would otherwise resurrect the path).
+        with self._compact_lock:
+            if self._compacting:
+                self._deleted_during_compact.add(path_str)
+                self._dirty_during_compact.discard(path_str)
+
         self.save_index()
         self._maybe_compact()
         logger.info(f"[Indexer] Removed {file_path} (idx={old_idx})")
@@ -319,6 +382,13 @@ class VaultIndexer:
 
         Compaction drops tombstoned vectors and reclaims memory / search cost.
         Must be called without holding self._index_lock.
+
+        Non-reentrant: the compaction flag is checked-and-set atomically under
+        _compact_lock, so at most one compaction rebuild runs at a time. Requests
+        arriving while one is in flight are skipped (a multi-minute re-embed must
+        not be serialized behind the incremental hot path). The rebuild runs
+        outside _compact_lock and the flag is cleared in a finally so an
+        exception cannot wedge compaction off permanently.
         """
         with self._index_lock:
             live = len(self.meta)
@@ -327,10 +397,55 @@ class VaultIndexer:
         if total == 0:
             return
         if dead > 0.2 * total:
+            with self._compact_lock:
+                if self._compacting:
+                    logger.debug("[Indexer] Compaction already in progress, skipping")
+                    return
+                self._compacting = True
             logger.info(
                 f"[Indexer] Compacting: {dead} tombstones / {total} total (> 20%), rebuilding index"
             )
-            self.rebuild_index()
+            try:
+                self.rebuild_index()
+                self._replay_dirty_after_compact()
+            finally:
+                with self._compact_lock:
+                    self._compacting = False
+
+    def _replay_dirty_after_compact(self) -> None:
+        """Re-apply file changes that landed while a compaction rebuild was in flight.
+
+        The rebuild swaps in an index built from a filesystem walk started before
+        the swap, so any add/remove that happened during the rebuild is discarded.
+        This drains the recorded dirty/deleted sets and re-applies them. Deletes
+        are processed first, matching the ordering rationale in
+        _VaultEventHandler._flush (a rename is a delete followed by an add).
+
+        Must be called with _compacting still True: the replayed add/remove calls
+        each end in _maybe_compact, which short-circuits on the set flag instead
+        of starting a nested rebuild. Replayed operations re-record themselves
+        while the flag is set, so the sets are drained again afterwards — any
+        mutation applied after the swap is already in the live index and needs no
+        further replay.
+        """
+        with self._compact_lock:
+            deletes = sorted(self._deleted_during_compact)
+            adds = sorted(self._dirty_during_compact)
+            self._deleted_during_compact.clear()
+            self._dirty_during_compact.clear()
+        if deletes or adds:
+            logger.info(
+                f"[Indexer] Re-applying {len(adds)} add(s) and {len(deletes)} delete(s) "
+                f"made during compaction"
+            )
+        for path in deletes:
+            self.remove_file_from_index(path)
+        for path in adds:
+            self.add_file_to_index(path)
+        # Drop the entries the replayed operations just re-recorded (see docstring).
+        with self._compact_lock:
+            self._deleted_during_compact.clear()
+            self._dirty_during_compact.clear()
 
     def _is_ignored(self, vault_root: Path, file_path: Path) -> bool:
         """Return True iff file_path is excluded by vault_root's .semanticignore rules.

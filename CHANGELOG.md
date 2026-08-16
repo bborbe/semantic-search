@@ -8,6 +8,13 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- fix: serialize index compaction — only one rebuild runs at a time, and requests arriving during an in-flight rebuild are skipped instead of starting their own. A high-churn vault previously drove the indexer into unbounded parallel rebuilds that saturated the GIL and never completed.
+- fix: re-apply files added or removed during a compaction rebuild, so edits made while the index rebuilds are no longer discarded by the post-rebuild swap.
+- fix: write the index cache atomically (temp file + rename) so an interrupted write can no longer leave a truncated index_meta.json behind.
+- fix: rebuild the index instead of failing permanently when the on-disk cache is corrupt or unreadable — a damaged cache previously left the service stuck reporting ready=false.
+
 ## v0.18.0
 
 - feat: add `VaultIgnore` module (`src/semantic_search/ignore.py`) — loads `.semanticignore` from vault root, compiles gitignore-style patterns via `pathspec`, and exposes `is_ignored(path)` predicate; oversized (>1 MiB) or unreadable files fall back to accept-all with ERROR log; malformed pattern lines (bad character ranges etc.) log ERROR with line number and are skipped while remaining patterns still apply; `.semanticignore` itself is always reported as ignored
