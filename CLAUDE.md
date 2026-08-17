@@ -4,7 +4,15 @@ Semantic search over markdown files — MCP + REST modes.
 
 ## Release Checklist
 
-**Before `dark-factory prompt approve`**: walk `scenarios/` against the working tree. `autoRelease: true` is on — once a prompt with a `## Unreleased` entry is approved, the daemon tags and pushes. There is no second checkpoint.
+**Before `dark-factory prompt approve`**: walk `scenarios/` against the working tree.
+
+`autoRelease` is **off** for this repo — `.dark-factory.yaml` sets no `autoRelease` key, and `dark-factory config` resolves it to `false`. Verified 2026-08-17; check with `dark-factory config | grep autoRelease` rather than trusting this line. Consequences, traced through the dark-factory source:
+
+- A completed prompt calls `CommitOnly` (`pkg/processor/workflow_helpers.go`) — it commits **locally** and logs `committed changes (autoRelease disabled, skipping tag)`.
+- The branch is **not pushed**: the push is gated on `AutoRelease` (`pkg/processor/workflow_executor_direct.go`).
+- No tag is cut and `## Unreleased` is **not** renamed. Releasing is a manual step — see [docs/releasing-semantic-search.md](docs/releasing-semantic-search.md).
+
+**But a second, separate flag does release:** `.maintainer.yaml` sets `release.autoRelease: true`, so once a commit with `## Unreleased` bullets reaches `master`, the maintainer-watcher bot tags and releases it automatically. The real checkpoint is therefore **push**, not approve — approving ships nothing, pushing ships everything. Walk the gate before approving anyway, since approve → push is the path of least resistance.
 
 Skip the scenario gate only if `git diff $INSTALLED..HEAD --name-only` matches no `src/**.py | pyproject.toml | Makefile | tests/**.py` paths. See [docs/releasing-semantic-search.md](docs/releasing-semantic-search.md) for the full flow.
 

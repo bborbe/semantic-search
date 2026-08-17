@@ -45,7 +45,16 @@ Skipping step 2 leaves `make check-versions` failing until the next plugin relea
 
 ## The release gate (run BEFORE `dark-factory prompt approve`)
 
-`autoRelease: true` is on for this repo (`.dark-factory.yaml`). The daemon ships every approved prompt that adds a `## Unreleased` entry — there is **no second checkpoint** after approval. The operator checkpoint is **before approve**, not after merge.
+**Two different `autoRelease` flags exist in this repo. Do not confuse them** — conflating them is what made this document wrong until 2026-08-17:
+
+| File | Value | What it controls |
+|---|---|---|
+| `.dark-factory.yaml` | **absent → `false`** | Whether *completing a prompt* tags and pushes. It does not: the prompt commits locally and is **not even pushed**. |
+| `.maintainer.yaml` | `release.autoRelease: true` | Whether the **maintainer-watcher bot** cuts a release from `## Unreleased` bullets once they reach `master`. It does. |
+
+So the checkpoint is not at approve — it is at **push**. Approving a prompt ships nothing; pushing the resulting commit to `master` hands it to the bot, which tags and releases within ~5 minutes (or immediately via `/github-release-repo-trigger`). Everything after that push is automatic and has no second checkpoint.
+
+Walk the gate before approving anyway. Once the prompt is approved the code exists and the next push carries it, so approve → push is the path of least resistance and the gate is easy to skip in between.
 
 `make precommit` is one part of the gate (format + test + lint + typecheck) but does **not** cover:
 
@@ -98,23 +107,42 @@ The git tag is **not** checked here — `hatch-vcs` derives the Python package v
 
 **NOT wired into `make precommit`** — see the "Version alignment" section above for why.
 
-## Python package release (automatic — operator owns the gate)
+## Python package release (MANUAL — `autoRelease` is off)
 
-Semantic-search runs `dark-factory` against itself with `autoRelease: true` and a `CHANGELOG.md`. Every successful prompt that adds a `## Unreleased` entry produces a new `vX.Y.Z` tag and pushes it. There is **no manual binary release step**. The release is the side-effect of completing a prompt.
+> **Corrected 2026-08-17.** This section previously claimed `autoRelease: true` and "no manual binary release step". Both were false. `.dark-factory.yaml` sets no `autoRelease` key and `dark-factory config` resolves it to `false`. Verify before trusting any claim here:
+>
+> ```bash
+> dark-factory config | grep autoRelease
+> ```
 
-The operator's responsibility is to **run the release gate before approving any prompt** that may produce a binary change. Once the prompt is approved, the daemon ships whatever the agent produced — there is no second checkpoint.
+### What actually happens when a prompt completes
 
-### What autoRelease does
+Traced through the dark-factory source (`v0.194.0`):
 
-After each successful prompt with `## Unreleased` content:
+1. `pkg/processor/workflow_helpers.go` — `autoRelease` false → `CommitOnly`. The change is committed **locally**, logged as `committed changes (autoRelease disabled, skipping tag)`.
+2. `pkg/processor/workflow_executor_direct.go` — the branch push is gated on `AutoRelease`, so **nothing is pushed**.
+3. No tag is created. `## Unreleased` is **not** renamed.
 
-1. Stage all changes (including the agent's `## Unreleased` entry).
-2. Determine bump (patch/minor) from the changelog content.
-3. Rename `## Unreleased` → `## vX.Y.Z`.
-4. Commit `release vX.Y.Z`.
-5. Tag `vX.Y.Z`.
-6. `git push` + `git push origin vX.Y.Z`.
-7. Move the prompt file to `prompts/completed/` and push that commit too.
+Net: a completed prompt leaves one unpushed local commit. If you approve a prompt and walk away expecting a release, you get silence — **until you push**.
+
+### What DOES release: the maintainer bot
+
+`.maintainer.yaml` sets `release.autoRelease: true`. Once a commit carrying `## Unreleased` bullets reaches `master`, the maintainer-watcher bot cuts the tag and release on its own — ~5 min on the periodic scan, or immediately via `/github-release-repo-trigger`.
+
+The bot does **not** touch `.claude-plugin/*.json`, so a bot-cut release leaves `make check-versions` failing until an operator bumps the three fields. Cutting the release by hand (below) in the same commit as the JSON bump avoids that window entirely, which is why the manual path is still the recommended one.
+
+### Releasing by hand (preferred — keeps versions aligned)
+
+1. Confirm the working tree is clean and tests pass — `make release-check`.
+2. Rename `## Unreleased` → `## vX.Y.Z` in `CHANGELOG.md` (bump per the `fix:`/`feat:` mix).
+3. Bump all three `.claude-plugin/` version fields to the same `X.Y.Z` — see [Alignment applies to every release](#alignment-applies-to-every-release-including-binary-only-ones).
+4. `make release-check` again — must print `✅ all four versions equal`.
+5. `git commit -m "release vX.Y.Z: <summary>"`, `git tag vX.Y.Z`, `git push && git push origin vX.Y.Z`.
+6. `uv tool upgrade semantic-search` and restart the launchd instances.
+
+### If you ever enable autoRelease
+
+Setting `autoRelease: true` in `.dark-factory.yaml` switches the completion path to `CommitAndRelease` (`pkg/git/helpers.go`), which stages all changes, computes the next version, rewrites `## Unreleased` → `## vX.Y.Z`, commits `release vX.Y.Z`, tags, and pushes both branch and tag. At that point approval genuinely ships with no second checkpoint, the scenario gate below becomes load-bearing, and this section must be rewritten again. Note it still would **not** bump the `.claude-plugin/` JSONs, so `make check-versions` would fail after every auto-tag.
 
 `hatch-vcs` derives `__version__` from the tag at install time → `uv tool upgrade semantic-search` picks up the new version on the next install. No `pyproject.toml` bump is ever needed.
 
