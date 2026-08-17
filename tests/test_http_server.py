@@ -313,6 +313,36 @@ class TestReindexEndpoint:
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
+    def test_reindex_returns_409_when_rebuild_in_progress(self) -> None:
+        """A second /reindex while a rebuild is in flight must return 409 with
+        REINDEX_IN_PROGRESS, not start another rebuild.
+
+        force_rebuild returns False when a rebuild is already running; the
+        handler must surface that as a busy response. Assert on the
+        deserialized response so the error code is proven to survive
+        serialization to the wire.
+        """
+        import semantic_search.http_server as http_server
+
+        original_event = http_server._indexer_ready
+        original_indexer = http_server._indexer
+        try:
+            ready_event = asyncio.Event()
+            ready_event.set()
+            http_server._indexer_ready = ready_event
+            mock_indexer = MagicMock()
+            mock_indexer.meta = {}
+            mock_indexer.force_rebuild.return_value = False
+            http_server._indexer = mock_indexer
+            with TestClient(build_app()) as client:
+                resp = client.post("/reindex")
+        finally:
+            http_server._indexer_ready = original_event
+            http_server._indexer = original_indexer
+        assert resp.status_code == 409
+        data = resp.json()
+        assert data["error"]["code"] == "REINDEX_IN_PROGRESS"
+
 
 class TestContentEndpoint:
     """Tests for GET /content endpoint."""

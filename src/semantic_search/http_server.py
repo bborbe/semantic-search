@@ -216,7 +216,13 @@ async def content(request: Request) -> JSONResponse:
 
 
 async def reindex(request: Request) -> JSONResponse:
-    """Handle /reindex endpoint. Blocks until reindex completes.
+    """Handle /reindex endpoint.
+
+    Blocks until the reindex completes only on the branch that actually
+    performs the rebuild (when no rebuild is in flight). If a rebuild is
+    already running — an automatic compaction or an earlier manual reindex —
+    returns HTTP 409 immediately with REINDEX_IN_PROGRESS rather than
+    starting a second one or holding the connection open for minutes.
 
     Returns 503 if the initial index build is still running — the client
     cannot meaningfully reindex something that has not finished indexing
@@ -227,7 +233,19 @@ async def reindex(request: Request) -> JSONResponse:
         return _not_ready_response()
     try:
         logger.info("Forcing reindex...")
-        await run_in_threadpool(_indexer.rebuild_index)
+        rebuilt = await run_in_threadpool(_indexer.force_rebuild)
+        if not rebuilt:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "REINDEX_IN_PROGRESS",
+                        "message": (
+                            "Another index rebuild is already in progress; retry once it completes"
+                        ),
+                    }
+                },
+                status_code=409,
+            )
         return JSONResponse(
             {
                 "status": "ok",

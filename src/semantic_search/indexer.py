@@ -397,20 +397,73 @@ class VaultIndexer:
         if total == 0:
             return
         if dead > 0.2 * total:
-            with self._compact_lock:
-                if self._compacting:
-                    logger.debug("[Indexer] Compaction already in progress, skipping")
-                    return
-                self._compacting = True
-            logger.info(
-                f"[Indexer] Compacting: {dead} tombstones / {total} total (> 20%), rebuilding index"
+            self._run_guarded_rebuild(
+                start_message=(
+                    f"Compacting: {dead} tombstones / {total} total (> 20%), rebuilding index"
+                ),
+                skip_message="Compaction already in progress, skipping",
+                skip_level=logging.DEBUG,
             )
-            try:
-                self.rebuild_index()
-                self._replay_dirty_after_compact()
-            finally:
-                with self._compact_lock:
-                    self._compacting = False
+
+    def _run_guarded_rebuild(
+        self,
+        start_message: str,
+        skip_message: str,
+        skip_level: int = logging.INFO,
+    ) -> bool:
+        """Run rebuild_index under the compaction guard.
+
+        Shared by _maybe_compact and force_rebuild so the guard's check-and-set,
+        rebuild, dirty-path replay, and finally-clear live in exactly one place.
+        The flag is checked-and-set atomically under _compact_lock; the rebuild
+        and replay run outside the lock; the flag is cleared in a finally so an
+        exception cannot wedge the guard closed.
+
+        Args:
+            start_message: INFO log emitted when this call acquires the guard
+                and begins the rebuild.
+            skip_message: Log emitted at skip_level when a rebuild is already in
+                flight and this call is skipped.
+            skip_level: Logging level for skip_message. Compaction skips are
+                DEBUG (they fire on every incremental mutation during a
+                rebuild); force_rebuild skips are INFO (a client-visible busy
+                signal).
+
+        Returns:
+            True if this call performed the rebuild, False if it was skipped
+            because a rebuild was already in flight.
+        """
+        with self._compact_lock:
+            if self._compacting:
+                logger.log(skip_level, "[Indexer] %s", skip_message)
+                return False
+            self._compacting = True
+        logger.info("[Indexer] %s", start_message)
+        try:
+            self.rebuild_index()
+            self._replay_dirty_after_compact()
+        finally:
+            with self._compact_lock:
+                self._compacting = False
+        return True
+
+    def force_rebuild(self) -> bool:
+        """Trigger a full index rebuild, guarded against concurrent rebuilds.
+
+        Unlike _maybe_compact this is unconditional: it ignores the tombstone
+        ratio and rebuilds on demand (the /reindex HTTP endpoint calls this).
+        It acquires the same guard as compaction, so a manual rebuild cannot run
+        concurrently with an automatic one.
+
+        Returns:
+            True if this call performed the rebuild, False if a rebuild was
+            already in flight and this call was skipped — the caller should
+            report busy rather than treat the reindex as done.
+        """
+        return self._run_guarded_rebuild(
+            start_message="Manual reindex requested, rebuilding index",
+            skip_message="Reindex already in progress, skipping manual reindex",
+        )
 
     def _replay_dirty_after_compact(self) -> None:
         """Re-apply file changes that landed while a compaction rebuild was in flight.
@@ -463,7 +516,15 @@ class VaultIndexer:
         return vault_ignore.is_ignored(file_path)
 
     def rebuild_index(self) -> None:
-        """Rebuild entire index from all vault paths."""
+        """Rebuild entire index from all vault paths.
+
+        External callers should call force_rebuild() instead: calling this
+        method directly bypasses the concurrency guard and the dirty-path
+        replay, so a direct call can run concurrently with a compaction and
+        silently discard file changes that land while it runs. This method is
+        kept for the initial build in _load_index, where no guard is wanted or
+        possible.
+        """
         # Build new index and metadata outside the lock (embedding is slow)
         new_index = faiss.IndexFlatIP(self.model.get_sentence_embedding_dimension())
         new_meta: dict[str, dict[str, str]] = {}

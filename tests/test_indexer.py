@@ -650,6 +650,192 @@ class TestVaultIndexerIncremental:
             assert indexer._dirty_during_compact == set()
             assert indexer._deleted_during_compact == set()
 
+    def test_force_rebuild_rebuilds_when_nothing_in_flight(self, temp_vault: Path) -> None:
+        """force_rebuild returns True and rebuilds when no rebuild is running."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            rebuild_calls: list[int] = []
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
+
+            result = indexer.force_rebuild()
+
+            assert result is True
+            assert len(rebuild_calls) == 1
+            assert indexer._compacting is False
+
+    def test_force_rebuild_skipped_when_compacting(self, temp_vault: Path) -> None:
+        """With _compacting already True, force_rebuild returns False without
+        calling rebuild_index."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            indexer._compacting = True
+
+            rebuild_calls: list[int] = []
+            indexer.rebuild_index = lambda: rebuild_calls.append(1)  # type: ignore[method-assign]
+
+            result = indexer.force_rebuild()
+
+            assert result is False
+            assert rebuild_calls == []
+            # The in-flight rebuild still owns the flag; we must not clear it
+            assert indexer._compacting is True
+
+    def test_force_rebuild_is_not_reentrant(self, temp_vault: Path) -> None:
+        """Concurrent force_rebuild calls must result in exactly one rebuild.
+
+        Uses real threads plus a Barrier so both calls race to the guard
+        simultaneously — the atomic check-and-set under _compact_lock means
+        only one proceeds, the other returns False immediately.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            rebuild_started = threading.Event()
+            rebuild_release = threading.Event()
+            rebuild_calls: list[int] = []
+
+            def blocking_rebuild() -> None:
+                rebuild_calls.append(1)
+                rebuild_started.set()
+                rebuild_release.wait(10)
+
+            indexer.rebuild_index = blocking_rebuild  # type: ignore[method-assign]
+
+            barrier = threading.Barrier(2)
+            results: list[bool] = []
+            results_lock = threading.Lock()
+            skipper_returned = threading.Event()
+
+            def worker() -> None:
+                barrier.wait()
+                r = indexer.force_rebuild()
+                with results_lock:
+                    results.append(r)
+                    # Wait for the ONE skipping worker only — the winner stays
+                    # blocked inside rebuild_index until we release it below.
+                    if len(results) >= 1:
+                        skipper_returned.set()
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+
+            assert rebuild_started.wait(10), "rebuild never started"
+            # The second call must have skipped (returned False) while the first
+            # rebuild is still blocked, proving the overlap window was real.
+            assert skipper_returned.wait(10), "skipping worker did not return"
+
+            rebuild_release.set()
+            for t in threads:
+                t.join(10)
+
+            assert len(rebuild_calls) == 1
+            assert sorted(results) == [False, True]
+            assert indexer._compacting is False
+
+    def test_force_rebuild_flag_reset_on_exception(self, temp_vault: Path) -> None:
+        """_compacting must be cleared (via finally) when rebuild_index raises."""
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+
+            def boom() -> None:
+                raise RuntimeError("simulated rebuild failure")
+
+            indexer.rebuild_index = boom  # type: ignore[method-assign]
+
+            with pytest.raises(RuntimeError, match="simulated rebuild failure"):
+                indexer.force_rebuild()
+
+            # The flag must have been cleared in the finally block
+            assert indexer._compacting is False
+
+            # A subsequent call must still attempt the rebuild
+            retried: list[int] = []
+            indexer.rebuild_index = lambda: retried.append(1)  # type: ignore[method-assign]
+            assert indexer.force_rebuild() is True
+            assert len(retried) == 1
+
+    def test_force_rebuild_replays_dirty_paths(self, temp_vault: Path) -> None:
+        """A file added while force_rebuild runs is re-applied afterwards.
+
+        The manual path must record mutations into the dirty sets during the
+        rebuild and drain them via _replay_dirty_after_compact afterwards —
+        otherwise the rebuild's swap silently discards the change.
+        """
+        with patch("semantic_search.indexer.SentenceTransformer") as mock_st:
+            mock_st.return_value.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value.encode.return_value = np.array([[0.1] * 384])
+
+            from semantic_search.indexer import VaultIndexer
+
+            indexer = VaultIndexer(str(temp_vault))
+            indexer._maybe_compact = lambda: None  # type: ignore[method-assign]
+
+            rebuild_started = threading.Event()
+            rebuild_release = threading.Event()
+            rebuild_calls: list[int] = []
+
+            def blocking_rebuild() -> None:
+                rebuild_calls.append(1)
+                rebuild_started.set()
+                rebuild_release.wait(10)
+
+            indexer.rebuild_index = blocking_rebuild  # type: ignore[method-assign]
+
+            # Track add_file_to_index calls without stubbing the real behavior
+            real_add = indexer.add_file_to_index
+            add_paths: list[str] = []
+
+            def tracking_add(path: str | Path) -> None:
+                add_paths.append(str(path))
+                real_add(path)
+
+            indexer.add_file_to_index = tracking_add  # type: ignore[method-assign]
+
+            added_path = temp_vault / "during-reindex.md"
+            added_path.write_text("# Added during reindex")
+
+            def add_during_rebuild() -> None:
+                rebuild_started.wait(10)
+                indexer.add_file_to_index(added_path)
+                rebuild_release.set()
+
+            t = threading.Thread(target=add_during_rebuild)
+            t.start()
+
+            result = indexer.force_rebuild()
+            t.join(10)
+
+            assert result is True
+            assert len(rebuild_calls) == 1
+            # The path was added once while the rebuild was in flight (recorded
+            # into the dirty set) and once more by the replay afterwards.
+            assert add_paths.count(str(added_path)) == 2
+            assert indexer._dirty_during_compact == set()
+            assert indexer._deleted_during_compact == set()
+            assert str(added_path) in indexer._path_to_idx
+
     def test_index_cache_survives_restart(self, temp_vault: Path) -> None:
         """A second VaultIndexer with the same paths loads the on-disk cache
         without re-embedding every file. With PID removed from index_dir, the
