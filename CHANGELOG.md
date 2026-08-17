@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.19.0
 
 - fix: route the /reindex endpoint through the compaction guard — a manual reindex can no longer run concurrently with an automatic compaction, and file changes made during a manual reindex are re-applied instead of being discarded by the post-rebuild swap.
 - feat: /reindex returns HTTP 409 with error code REINDEX_IN_PROGRESS when a rebuild is already in flight, instead of starting a second one.
