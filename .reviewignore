@@ -1,0 +1,7 @@
+# Paths the PR reviewer skips — excluded from the MAX_ADDITIONS /
+# MAX_CHANGED_FILES size gate and from the reviewer's context.
+
+# dark-factory pipeline state (specs/prompts are human-gated by the
+# dark-factory pipeline's own audit, not the PR reviewer)
+prompts/
+specs/
