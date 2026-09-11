@@ -58,20 +58,20 @@ claude mcp add -s project semantic-search \
 
 ### HTTP (shared across all clients)
 
-Single long-running process serves MCP-over-HTTP at `/mcp` plus REST at `/search`, `/duplicates`, `/health`, `/reindex`. All Claude Code sessions and REST clients share one warm indexer.
+Single long-running process serves MCP-over-HTTP at `/mcp` plus REST at `/search`, `/duplicates`, `/content`, `/health`, `/reindex`. All Claude Code sessions and REST clients share **one warm indexer**, and each request names the **scope** it wants — so one process gives every client its own view without a second index.
 
 ```bash
-CONTENT_PATH=/path/to/vault semantic-search-http --host 127.0.0.1 --port 8321
+SEMANTIC_SCOPE_MAP=scopes.yaml semantic-search-http --host 127.0.0.1 --port 8321
 ```
 
-Point Claude Code at it via MCP config:
+Scopes are declared in `scopes.yaml` — see [design/per-vault-scoping.md](docs/design/per-vault-scoping.md) for the contract and the fail-closed default. Point Claude Code at it via MCP config; clients differ only by the scope in their URL:
 
 ```json
 {
   "mcpServers": {
     "semantic-search": {
       "type": "http",
-      "url": "http://127.0.0.1:8321/mcp"
+      "url": "http://127.0.0.1:8321/mcp?scope=personal"
     }
   }
 }
@@ -81,12 +81,15 @@ Point Claude Code at it via MCP config:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/mcp` | POST | MCP-over-HTTP (Claude Code) |
-| `/search?q=...&top_k=5` | GET | Semantic search |
-| `/duplicates?file=...&threshold=0.85` | GET | Find duplicate notes |
-| `/content?path=...&snippet=...&query=...&context_lines=...` | GET | Retrieve file content |
-| `/health` | GET | Health check with index stats |
-| `/reindex` | GET/POST | Force index rebuild |
+| `/mcp` | POST | MCP-over-HTTP (Claude Code); scope comes from the URL |
+| `/search?q=...&top_k=5&scope=...` | GET | Semantic search within a scope |
+| `/duplicates?file=...&threshold=0.85&scope=...` | GET | Find duplicate notes within a scope |
+| `/content?path=...&snippet=...&query=...&context_lines=...&scope=...` | GET | Retrieve file content within a scope |
+| `/health` | GET | Health check with index stats (scopeless) |
+| `/reindex` | GET/POST | Force index rebuild (scopeless) |
+
+`scope` is **required** on `/search`, `/duplicates`, and `/content`. Omitting it returns HTTP 400 `MISSING_SCOPE`; an unknown name returns 400 `UNKNOWN_SCOPE`. There is deliberately no union-wide fallback.
+
 
 **Example queries:**
 ```bash

@@ -8,6 +8,14 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: scope the read paths — `/search`, `/duplicates`, and `/content` now answer only from the requested scope's roots: a scoped search widens its retrieval window rather than returning fewer than `top_k` results when out-of-scope documents crowd the nearest-neighbour window, duplicate detection never returns an out-of-scope candidate, and an out-of-scope `/content` path is refused with the existing `PATH_OUTSIDE_ROOTS` error. Response envelopes are unchanged.
+- feat: the HTTP server now requires a `scope` query parameter on `/search`, `/duplicates`, and `/content`, and refuses a request that names no scope or an unknown scope with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) instead of answering it from the full index. The scope map lives in `scopes.yaml` and is named by the `SEMANTIC_SCOPE_MAP` environment variable.
+- feat: scope the MCP-over-HTTP mount — a request to `/mcp` that names no scope or an unknown scope is refused with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) by a pure ASGI middleware before the MCP protocol layer runs, and the `search_related`, `check_duplicates`, and `get_content` tools answer only from the scope bound when their MCP session was established. The scope travels as context-scoped state the HTTP layer binds, never anything stored on the shared indexer; the stdio transport is untouched and still answers from `CONTENT_PATH` with no scope handling.
+- feat: MCP clients now select their view with a scope in the config URL (`http://127.0.0.1:8321/mcp?scope=personal`) instead of a per-vault port — one server and one index serve every scope. Existing per-vault MCP server **names** are unchanged; only the URL each name points at changes.
+- feat: add `scripts/replay-scope-fixture.py`, a standard-library-only command that replays the frozen pre-consolidation acceptance baseline against a live scoped server scope by scope and compares each `/search` result's paths in order. It exits 0 on a full match, 1 naming the scope and query when a comparison differs, and 2 on a reason on stderr when comparison was impossible (unreadable or malformed fixture, unreachable server, timeout, non-2xx, or a response body outside the `{"query", "results", "count"}` envelope). The fixture is read-only — the tool never rewrites it.
+
 ## v0.19.0
 
 - fix: route the /reindex endpoint through the compaction guard — a manual reindex can no longer run concurrently with an automatic compaction, and file changes made during a manual reindex are re-applied instead of being discarded by the post-rebuild swap.

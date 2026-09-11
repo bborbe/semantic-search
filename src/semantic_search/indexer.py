@@ -8,6 +8,7 @@ import re
 import tempfile
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from threading import Thread
 from typing import Any
@@ -27,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 # Extract inline markdown tags: #project, #team-a/sub
 INLINE_TAG_PATTERN = re.compile(r"(?<!\w)#([\w\-/]+)")
+
+
+def _path_within_roots(path: Path, roots: Sequence[Path]) -> bool:
+    """Return True iff `path`, after resolving symlinks, lies inside one of `roots`."""
+    resolved = path.resolve()
+    return any(resolved.is_relative_to(root.resolve()) for root in roots)
 
 
 class VaultIndexer:
@@ -566,33 +573,61 @@ class VaultIndexer:
         self.save_index()
         logger.info(f"[Indexer] Rebuilt index with {len(self.meta)} files")
 
-    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """Search for related notes, skipping tombstoned entries."""
+    def search(
+        self, query: str, top_k: int = 5, roots: Sequence[Path] | None = None
+    ) -> list[dict[str, Any]]:
+        """Search for related notes, skipping tombstoned entries.
+
+        Args:
+            query: The query text to embed and search with.
+            top_k: Maximum number of results to return.
+            roots: When given, only paths inside these roots may appear in the
+                result, ordered by the index's own nearest-neighbour ordering
+                restricted to in-scope documents. None means every indexed
+                root (the stdio transport and CLI contract).
+
+        Returns:
+            Up to top_k results as {"path", "score"} dicts.
+        """
         if len(self.meta) == 0:
             return []
 
         vec = self._embed_text(query)
         with self._index_lock:
-            # Oversample to account for tombstoned rows we will skip
-            oversample = min(top_k * 4, self.index.ntotal)
-            if oversample == 0:
+            ntotal = self.index.ntotal
+            if ntotal == 0:
                 return []
-            distances, indices = self.index.search(vec, oversample)
             meta_snapshot = dict(self.meta)
             tombstones_snapshot = set(self._tombstones)
 
-        results: list[dict[str, Any]] = []
-        for score, idx in zip(distances[0], indices[0], strict=True):
-            if idx < 0:  # FAISS returns -1 for missing slots when k > ntotal
-                continue
-            if int(idx) in tombstones_snapshot:
-                continue
-            if str(idx) not in meta_snapshot:
-                continue
-            results.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
-            if len(results) >= top_k:
-                break
-        return results
+            # Oversample to account for tombstoned rows we will skip. With a
+            # scope given, out-of-scope neighbours can crowd the first window;
+            # widen geometrically until top_k in-scope results are found or the
+            # window covers the whole index. The window is always derived from
+            # top_k and bounded by the index size, so a request can never force
+            # an unbounded scan, and a scope never returns fewer than top_k
+            # merely because out-of-scope documents crowded the window.
+            window = min(top_k * 4, ntotal)
+            while True:
+                distances, indices = self.index.search(vec, window)
+                results: list[dict[str, Any]] = []
+                for score, idx in zip(distances[0], indices[0], strict=True):
+                    if idx < 0:  # FAISS returns -1 for missing slots when k > ntotal
+                        continue
+                    if int(idx) in tombstones_snapshot:
+                        continue
+                    meta = meta_snapshot.get(str(idx))
+                    if meta is None:
+                        continue
+                    if roots is not None and not _path_within_roots(Path(meta["path"]), roots):
+                        continue
+                    results.append({"path": meta["path"], "score": float(score)})
+                    if len(results) >= top_k:
+                        return results
+                if roots is not None and window < ntotal:
+                    window = min(max(window * 2, window + 1), ntotal)
+                    continue
+                return results
 
     def get_content(
         self,
@@ -600,6 +635,7 @@ class VaultIndexer:
         snippet: bool = False,
         query: str | None = None,
         context_lines: int = 20,
+        roots: Sequence[Path] | None = None,
     ) -> dict[str, str]:
         """Return content for the given path, optionally as a snippet around the best-matching line.
 
@@ -609,24 +645,30 @@ class VaultIndexer:
             query: Search string used to find the best-matching line
                 (only meaningful when snippet=True)
             context_lines: Number of lines before and after the best match to include
+            roots: When given, the path must resolve inside one of these roots.
+                None keeps the check against the indexer's own vault roots
+                (the stdio transport and CLI contract).
 
         Returns:
             Dict with keys: "path" (resolved absolute path),
                 "content" (string), "mode" ("full" | "snippet")
 
         Raises:
-            ValueError: If path resolves outside the indexed vault roots
+            ValueError: If path resolves outside the scoped roots (or the
+                vault roots when roots is None)
             FileNotFoundError: If path is inside roots but file does not exist
         """
         # Resolve the path (follows symlinks)
         resolved_path = Path(path).resolve()
 
-        # Path validation: check if resolved path is inside any vault root.
-        # vault_paths are stored unresolved; resolve each here so the comparison
-        # is consistent on systems where the vault path crosses a symlink
-        # (e.g. macOS `/tmp` → `/private/tmp`).
-        is_inside = any(resolved_path.is_relative_to(vp.resolve()) for vp in self.vault_paths)
-        if not is_inside:
+        # Path validation: check if resolved path is inside the scoped roots,
+        # or (when no scope is given) inside any vault root. Both sides are
+        # resolved so the comparison is consistent on systems where a root
+        # crosses a symlink (e.g. macOS `/tmp` → `/private/tmp`). The scope
+        # check runs BEFORE the existence check so an out-of-scope path is
+        # refused even when the file does not exist.
+        check_roots: Sequence[Path] = self.vault_paths if roots is None else roots
+        if not _path_within_roots(resolved_path, check_roots):
             raise ValueError("path not in indexed roots")
 
         # Existence check (must happen BEFORE reading)
@@ -677,8 +719,24 @@ class VaultIndexer:
 
         return {"path": resolved_path_str, "content": snippet_content, "mode": "snippet"}
 
-    def find_duplicates(self, file_path: str | Path) -> list[dict[str, Any]] | dict[str, str]:
-        """Find potential duplicates of a file."""
+    def find_duplicates(
+        self, file_path: str | Path, roots: Sequence[Path] | None = None
+    ) -> list[dict[str, Any]] | dict[str, str]:
+        """Find potential duplicates of a file.
+
+        Args:
+            file_path: The file to compare against the index (absolute, or
+                relative to one of the vault roots).
+            roots: When given, only candidate paths inside these roots are
+                returned. None means every indexed root (the stdio transport
+                and CLI contract). The `file` argument itself is not scope-
+                checked — only the candidate set is filtered.
+
+        Returns:
+            A list of {"path", "score"} dicts for documents scoring above the
+            duplicate threshold (excluding the file itself), or an
+            {"error": ...} dict when the file is missing or unreadable.
+        """
         file_path = Path(file_path) if isinstance(file_path, str) else file_path
         if not file_path.is_absolute():
             # Try each vault path for relative paths
@@ -712,12 +770,16 @@ class VaultIndexer:
                 continue
             if int(idx) in tombstones_snapshot:
                 continue
+            if str(idx) not in meta_snapshot:
+                continue
+            candidate_path = meta_snapshot[str(idx)]["path"]
+            if roots is not None and not _path_within_roots(Path(candidate_path), roots):
+                continue
             if (
-                str(idx) in meta_snapshot
-                and score > self.duplicate_threshold
-                and Path(meta_snapshot[str(idx)]["path"]).resolve() != file_path.resolve()
+                score > self.duplicate_threshold
+                and Path(candidate_path).resolve() != file_path.resolve()
             ):
-                duplicates.append({"path": meta_snapshot[str(idx)]["path"], "score": float(score)})
+                duplicates.append({"path": candidate_path, "score": float(score)})
         return duplicates
 
 

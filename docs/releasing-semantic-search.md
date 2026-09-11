@@ -74,8 +74,13 @@ ls scenarios/*.md
 Current scenarios:
 
 - `scenarios/001-mcp-stdio-no-stdout-pollution.md` — `semantic-search-mcp serve` keeps stdout clean, logs on stderr
-- `scenarios/002-http-rest-search-returns-json.md` — `semantic-search-http` binds a port and returns valid JSON
+- `scenarios/002-http-rest-search-returns-json.md` — `semantic-search-http` binds a port and returns valid JSON for a scoped search
 - `scenarios/003-cli-search-prints-results.md` — `semantic-search search` one-shot returns results, exit 0
+- `scenarios/004-http-content-fetch-happy-path.md` — `GET /content` full and snippet modes over a real socket
+- `scenarios/005-http-content-fetch-error-responses.md` — `GET /content` path-traversal and missing-file rejections
+- `scenarios/006-http-reindex-concurrency.md` — `GET /reindex` returns 409 `REINDEX_IN_PROGRESS` for a second call while one is rebuilding
+
+Scenarios 002/004/005/006 drive the server through `scenarios/helper/start-http-server.sh`, which derives a throwaway one-scope map from `CONTENT_PATH` and passes it as `SEMANTIC_SCOPE_MAP` — so a scenario run indexes its own corpus, never the real vaults, and its requests carry `&scope=scenario`. 001 (stdio) and 003 (CLI) keep `CONTENT_PATH` and are unscoped.
 
 If any scenario fails, do **not** approve the prompt. Reject, fix, re-audit. Once approved, the daemon ships whatever the agent produced — there is no rollback short of a follow-up release.
 
@@ -237,8 +242,9 @@ The plugin's install is automatic via the marketplace once the bumped JSONs reac
 
 ## Backwards compatibility
 
+- **Scopes** — `?scope=<name>` is required on `/search`, `/duplicates`, and `/content` (REST) and on the MCP config URL. Omitting it, or naming an unknown scope, returns HTTP 400 with `MISSING_SCOPE` / `UNKNOWN_SCOPE`; there is deliberately no union-wide fallback. See [design/per-vault-scoping.md](design/per-vault-scoping.md).
 - **MCP server names** — slash commands (`search.md`, `research.md`) hard-list `mcp__semantic-search__`, `mcp__semantic-search-personal__`, `mcp__semantic-search-work__` in `allowed-tools`. Custom labels reach via REST fallback only. Adding a fourth conventional label requires editing `allowed-tools` AND the "Known servers" tables in both commands.
-- **Port discovery** — REST fallback enumerates running `semantic-search-http` services via launchd/systemd. Don't break the `com.github.bborbe.semantic-search-http[-<label>]` plist label convention without updating `commands/search.md` and `commands/research.md`.
+- **Port discovery** — REST fallback enumerates running `semantic-search-http` services via launchd/systemd. Don't break the `com.github.bborbe.semantic-search-http[-<label>]` plist label convention without updating `commands/search.md` and `commands/research.md`. Note that the consolidation retires four of the five conventional labels: afterwards one `semantic-search-http` service serves every scope, so a fallback that enumerates *instances* finds one and must select a **scope**, not a port.
 - **`/configure`** — the source of truth for plist/unit naming and MCP config layout. Keep `search.md` and `research.md` in sync with whatever `configure.md` produces.
 
 ## See also

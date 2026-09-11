@@ -22,7 +22,7 @@ Validates that `semantic-search-http` binds a port, indexes a content directory,
   ```
 - [ ] Run the search and capture the response:
   ```bash
-  curl -fsS "http://127.0.0.1:18321/search?q=kubernetes&top_k=3" \
+  curl -fsS "http://127.0.0.1:18321/search?q=kubernetes&top_k=3&scope=scenario" \
     -o /tmp/scenario-002-response.json
   ```
 

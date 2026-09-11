@@ -22,12 +22,12 @@ Validates that `semantic-search-http` serves `GET /content` over a real socket f
   ```
 - [ ] Full-mode fetch — entire `kubernetes.md`:
   ```bash
-  curl -fsS "http://127.0.0.1:18322/content?path=${CONTENT_DIR}/kubernetes.md" \
+  curl -fsS "http://127.0.0.1:18322/content?path=${CONTENT_DIR}/kubernetes.md&scope=scenario" \
     -o /tmp/scenario-004-full.json
   ```
 - [ ] Snippet-mode fetch — focused window around "autoscaling":
   ```bash
-  curl -fsS "http://127.0.0.1:18322/content?path=${CONTENT_DIR}/kubernetes.md&snippet=true&query=autoscaling&context_lines=0" \
+  curl -fsS "http://127.0.0.1:18322/content?path=${CONTENT_DIR}/kubernetes.md&snippet=true&query=autoscaling&context_lines=0&scope=scenario" \
     -o /tmp/scenario-004-snippet.json
   ```
 

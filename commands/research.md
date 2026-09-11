@@ -49,11 +49,13 @@ launchctl list 2>/dev/null | awk '/com\.github\.bborbe\.semantic-search-http/ {p
 systemctl --user list-units 'semantic-search-http*' --no-legend 2>/dev/null | awk '{print $1}'
 ```
 
-For each running service, infer port from plist/unit and query:
+For each running service, infer port from plist/unit and query. Since the per-vault scoping change, `/search` **requires** a `scope` — take it from the service's MCP config URL (`?scope=<name>`); the scope, not the port, selects the vault view:
 
 ```bash
-curl -fsS --max-time 10 "http://127.0.0.1:<PORT>/search?q=$(printf %s "<topic>" | jq -sRr @uri)&top_k=10"
+curl -fsS --max-time 10 "http://127.0.0.1:<PORT>/search?q=$(printf %s "<topic>" | jq -sRr @uri)&top_k=10&scope=<SCOPE>"
 ```
+
+An unscoped call returns HTTP 400 `MISSING_SCOPE` rather than the union index — never fall back to querying without one.
 
 Override default with `SEMANTIC_SEARCH_URL` if needed.
 
@@ -116,4 +118,4 @@ Always tag each cited path with its source server label.
 - If the topic spans multiple distinct concepts, surface that and ask the user to narrow.
 - Prefer guides over daily notes when both surface for the same concept.
 - For tasks that are mostly "find one specific file", use `/semantic-search:search` instead — `research` is for synthesis across multiple sources.
-- Adding a new instance label requires extending this command's `allowed-tools` list and the "Known servers" table above.
+- Adding a new instance label requires extending this command's `allowed-tools` list and the "Known servers" table above. Adding a new **scope** does not — scopes live in `scopes.yaml` and one server serves them all.

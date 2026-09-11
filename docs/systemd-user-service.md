@@ -176,38 +176,56 @@ uv tool upgrade semantic-search
 systemctl --user restart semantic-search-http.service
 ```
 
-## Multi-instance setup
+## One instance, many scopes
 
-Run multiple `semantic-search-http` instances side-by-side — typically one per logical content domain (e.g. personal vault vs. work vault) — by adding a label suffix and assigning a distinct port to each.
+Run **one** `semantic-search-http` instance and give each client its own view with a
+scope, rather than one instance per content domain. A per-domain instance means a
+per-domain index: five daemons over overlapping content measured 10.3 GB combined
+`phys_footprint` on 2026-09-11, almost all of it duplicated index data. One daemon holds
+one union index; the scope filter narrows it per client.
 
-Naming pattern:
+Scopes are declared in `scopes.yaml` (named by the `SEMANTIC_SCOPE_MAP` env var) and
+selected with `?scope=<name>`. See [design/per-vault-scoping.md](design/per-vault-scoping.md)
+for the contract, the five scope names, and the fail-closed default.
 
-| Component | Default | With suffix `personal` |
-|-----------|---------|------------------------|
-| Unit file | `semantic-search-http.service` | `semantic-search-http-personal.service` |
-| Port | `8321` | e.g. `8322` |
-| MCP server name | `semantic-search` | `semantic-search-personal` |
-
-Each instance gets its own unit file, port, `CONTENT_PATH`, and MCP config entry.
-
-**Each instance MUST bind a unique port.** TCP ports cannot be shared, so if two units try to bind 8321 only one wins and the other restarts in a loop. Convention: increment the port for each new instance (8321, 8322, 8323, …).
-
-Example Claude MCP config for two instances:
+MCP clients differ only by the scope in their URL:
 
 ```json
 {
   "mcpServers": {
     "semantic-search-personal": {
       "type": "http",
-      "url": "http://127.0.0.1:8321/mcp"
+      "url": "http://127.0.0.1:8321/mcp?scope=personal"
     },
-    "semantic-search-work": {
+    "semantic-search-brogrammers": {
       "type": "http",
-      "url": "http://127.0.0.1:8322/mcp"
+      "url": "http://127.0.0.1:8321/mcp?scope=brogrammers"
     }
   }
 }
 ```
+
+Two clients, two scopes, **one port and one index**.
+
+### Adding a scope
+
+Add a name and its ordered root list to `scopes.yaml`, then restart the unit — the scope
+map is read at startup. A scope name is a dictionary key, never a filesystem path and
+never a shell fragment.
+
+### If you genuinely need a second instance
+
+The label-suffix pattern below still works, and each instance still needs its own unit
+file, `Port`, and `SEMANTIC_SCOPE_MAP`. **Each instance MUST bind a unique port** — TCP
+ports cannot be shared, so if two units try to bind 8321 only one wins and the other
+restarts in a loop. But a second instance means a second full index, which is exactly
+the cost the scope design exists to avoid: prefer a scope.
+
+| Component | Default | With suffix `personal` |
+|-----------|---------|------------------------|
+| Unit file | `semantic-search-http.service` | `semantic-search-http-personal.service` |
+| Port | `8321` | e.g. `8322` |
+| MCP server name | `semantic-search` | `semantic-search-personal` |
 
 Enable each unit independently:
 

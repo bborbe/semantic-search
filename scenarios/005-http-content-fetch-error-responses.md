@@ -23,13 +23,13 @@ Validates that `semantic-search-http` returns the documented nested error shape 
 - [ ] Path-traversal attempt (`/etc/passwd`) — capture status and body separately:
   ```bash
   STATUS=$(curl -s -o /tmp/scenario-005-traversal.json -w "%{http_code}" \
-    "http://127.0.0.1:18323/content?path=/etc/passwd")
+    "http://127.0.0.1:18323/content?path=/etc/passwd&scope=scenario")
   echo -n "$STATUS" > /tmp/scenario-005-traversal.status
   ```
 - [ ] Missing-file attempt (path inside vault, file absent):
   ```bash
   STATUS=$(curl -s -o /tmp/scenario-005-missing.json -w "%{http_code}" \
-    "http://127.0.0.1:18323/content?path=${CONTENT_DIR}/does-not-exist.md")
+    "http://127.0.0.1:18323/content?path=${CONTENT_DIR}/does-not-exist.md&scope=scenario")
   echo -n "$STATUS" > /tmp/scenario-005-missing.status
   ```
 
