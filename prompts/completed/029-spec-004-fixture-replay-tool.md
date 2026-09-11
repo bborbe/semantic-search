@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [004-per-vault-scoping]
+summary: Added scripts/replay-scope-fixture.py — a standard-library-only command that replays the frozen pre-consolidation baseline against a live scoped server per scope, comparing ordered result paths and exiting 0/1/2 per the pinned contract — plus an 11-test suite (stub-server + end-to-end against the real scoped server) and a CHANGELOG entry.
+execution_id: semantic-search-exec-029-spec-004-fixture-replay-tool
+dark-factory-version: dev
 created: "2026-09-11T11:27:52Z"
 queued: "2026-09-11T12:32:41Z"
+started: "2026-09-11T13:21:01Z"
+completed: "2026-09-11T13:27:12Z"
 ---
 
 # Add the frozen-fixture replay tool

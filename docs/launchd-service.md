@@ -165,11 +165,50 @@ launchctl unload ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.p
 launchctl load ~/Library/LaunchAgents/com.github.bborbe.semantic-search-http.plist
 ```
 
-## Multi-instance setup
+## One instance, many scopes
 
-Run multiple `semantic-search-http` instances side-by-side — typically one per logical content domain (e.g. personal vault vs. work vault) — by adding a label suffix and assigning a distinct port to each.
+Run **one** `semantic-search-http` instance and give each client its own view with a
+scope, rather than one instance per content domain. A per-domain instance means a
+per-domain index: five daemons over overlapping content measured 10.3 GB combined
+`phys_footprint` on 2026-09-11, almost all of it duplicated index data. One daemon holds
+one union index; the scope filter narrows it per client.
 
-Naming pattern:
+Scopes are declared in `scopes.yaml` (named by the `SEMANTIC_SCOPE_MAP` env var) and
+selected with `?scope=<name>`. See [design/per-vault-scoping.md](design/per-vault-scoping.md)
+for the contract, the five scope names, and the fail-closed default.
+
+MCP clients differ only by the scope in their URL:
+
+```json
+{
+  "mcpServers": {
+    "semantic-search": {
+      "type": "http",
+      "url": "http://127.0.0.1:8321/mcp?scope=personal"
+    },
+    "semantic-search-brogrammers": {
+      "type": "http",
+      "url": "http://127.0.0.1:8321/mcp?scope=brogrammers"
+    }
+  }
+}
+```
+
+Two clients, two scopes, **one port and one index**.
+
+### Adding a scope
+
+Add a name and its ordered root list to `scopes.yaml`, then restart the daemon — the
+scope map is read at startup. A scope name is a dictionary key, never a filesystem path
+and never a shell fragment.
+
+### If you genuinely need a second instance
+
+The label-suffix pattern below still works, and each instance still needs its own
+`Label`, `Port`, and `StandardOutPath`. **Each instance MUST bind a unique port** — TCP
+ports cannot be shared, so if two plists try to bind 8321 only one wins and the other
+restarts in a loop. But a second instance means a second full index, which is exactly
+the cost the scope design exists to avoid: prefer a scope.
 
 | Component | Default | With suffix `personal` |
 |-----------|---------|------------------------|
@@ -178,31 +217,6 @@ Naming pattern:
 | Log path | `/tmp/semantic-search-http.log` | `/tmp/semantic-search-http-personal.log` |
 | Port | `8321` | e.g. `8322` |
 | MCP server name | `semantic-search` | `semantic-search-personal` |
-
-Each instance gets:
-
-- Its own plist file in `~/Library/LaunchAgents/`
-- Its own `Label`, `Port`, `CONTENT_PATH`, and `StandardOutPath`
-- Its own MCP config entry pointing at the matching port
-
-**Each instance MUST bind a unique port.** TCP ports cannot be shared, so if two plists try to bind 8321 only one wins and the other restarts in a loop. Convention: increment the port for each new instance (8321, 8322, 8323, …).
-
-Example Claude MCP config for two instances:
-
-```json
-{
-  "mcpServers": {
-    "semantic-search-personal": {
-      "type": "http",
-      "url": "http://127.0.0.1:8321/mcp"
-    },
-    "semantic-search-work": {
-      "type": "http",
-      "url": "http://127.0.0.1:8322/mcp"
-    }
-  }
-}
-```
 
 Load each plist independently:
 
