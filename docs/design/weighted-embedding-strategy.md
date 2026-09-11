@@ -98,6 +98,10 @@ Parse YAML frontmatter (content between `---` markers) and extract:
 - `tags`: List of strings
 - `aliases`: List of strings
 
+**Tag order is part of the contract, not an implementation detail.** The tag block is emitted as: the frontmatter `tags` unioned with the inline body tags, lowercased, deduplicated with the first occurrence winning and ordered by first appearance — then the frontmatter `aliases` appended after them, keeping their original case.
+
+The order must be derived from the document, never from an unordered collection. A `set` iterates in an order that depends on the process's string-hash seed, so building this block from one makes the embedding — and therefore the search ranking — differ between two processes that read the identical file. The ranking is then not reproducible across restarts, and no frozen-baseline comparison can hold.
+
 ### Body Truncation
 
 - Remove frontmatter before counting

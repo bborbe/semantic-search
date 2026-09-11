@@ -337,6 +337,95 @@ Testing #test-tag and #test_tag and #EUR/USD
             assert len(inline_tags) == 3
 
 
+class TestVaultIndexerTagOrder:
+    """Tests pinning the exact tag-block text the embedder receives.
+
+    The tag block is the 4th line of the prepared text (index 3) whenever the
+    fixture has no frontmatter ``title``: the first three lines are the
+    filename repeated three times. These tests assert the whole line, never a
+    substring, because the defect being guarded against is ordering — a
+    ``set``- or ``sorted``-based implementation still contains every tag.
+    """
+
+    def _prepare(self, tmp_path: Path, content: str, name: str = "fixture.md") -> str:
+        """Write ``content`` to ``tmp_path``/``name`` and return the prepared text.
+
+        Uses ``VaultIndexer.__new__`` to skip ``__init__`` (which loads the
+        embedding model); ``_prepare_text_for_embedding`` needs no instance
+        state.
+        """
+        from semantic_search.indexer import VaultIndexer
+
+        path = tmp_path / name
+        path.write_text(content)
+        indexer = VaultIndexer.__new__(VaultIndexer)
+        return VaultIndexer._prepare_text_for_embedding(indexer, path, content)
+
+    def test_authored_order_preserved(self, tmp_path: Path) -> None:
+        """Frontmatter tags are emitted in authored order, not alphabetised."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: [alpha, beta, gamma, delta, epsilon]\n---\n\n# Fixture\n\nbody text\n",
+        )
+        assert prepared.split("\n")[3] == "alpha beta gamma delta epsilon"
+
+    def test_lowercase_dedup_keeps_first_occurrence(self, tmp_path: Path) -> None:
+        """Case-insensitive duplicates collapse to one lowercase occurrence."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: [Foo, foo]\n---\n\n# Fixture\n\nbody #FOO\n",
+        )
+        assert prepared.split("\n")[3] == "foo"
+
+    def test_aliases_appended_after_tags(self, tmp_path: Path) -> None:
+        """Aliases keep their original case and sit after the tag union."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: [a]\naliases: [B]\n---\n\n# Fixture\n\nbody text\n",
+        )
+        assert prepared.split("\n")[3] == "a B"
+
+    def test_cross_source_duplicate_dropped_not_moved(self, tmp_path: Path) -> None:
+        """An inline duplicate of a frontmatter tag keeps its frontmatter position."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: [alpha, beta]\n---\n\n# Fixture\n\nbody #beta #gamma\n",
+        )
+        assert prepared.split("\n")[3] == "alpha beta gamma"
+
+    def test_bare_string_tag_then_inline(self, tmp_path: Path) -> None:
+        """A bare-string frontmatter tag is one tag, followed by inline tags."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: single-tag\n---\n\n# Fixture\n\nbody #inline-tag\n",
+        )
+        assert prepared.split("\n")[3] == "single-tag inline-tag"
+
+    def test_inline_only_in_body_order(self, tmp_path: Path) -> None:
+        """With no frontmatter tags the block is the inline tags in body order."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\n---\n\n# Fixture\n\nbody #alpha #beta\n",
+        )
+        assert prepared.split("\n")[3] == "alpha beta"
+
+    def test_malformed_frontmatter_falls_back_to_inline(self, tmp_path: Path) -> None:
+        """Unparseable frontmatter logs its warning and yields inline tags only."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\ntags: [unclosed\n---\nbody #alpha #beta\n",
+        )
+        assert prepared.split("\n")[3] == "alpha beta"
+
+    def test_untagged_file_is_byte_identical(self, tmp_path: Path) -> None:
+        """An untagged file's full prepared text is unchanged by this fix."""
+        prepared = self._prepare(
+            tmp_path,
+            "---\n---\n\n# Fixture\n\nbody text\n",
+        )
+        assert prepared == "fixture\nfixture\nfixture\nFixture\nFixture\n# Fixture body text"
+
+
 class TestVaultIndexerIncremental:
     """Tests for incremental add/update/remove."""
 

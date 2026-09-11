@@ -8,6 +8,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- fix: assemble the embedding tag block in authored order instead of from a `set`, so an unchanged file produces the same embedding in every process — a document's tags are emitted frontmatter-first then inline, deduplicated with the first occurrence winning, and search rankings no longer drift between restarts and index rebuilds.
+- docs: state the tag-ordering contract in the weighted-embedding design doc — the order of the tag block is a documented requirement rather than an implementation detail, because assembling it from an unordered collection makes the embedding, and therefore the search ranking, differ between processes that read the identical file.
+- test: add a cross-process regression test that proves the tag block is seed-independent — three subprocesses started with three different `PYTHONHASHSEED` values must report three distinct pids and hash fingerprints, one identical tagged digest, one identical untagged control digest, and the authored tag order under every seed.
+
 ## v0.20.0
 
 - feat: scope the read paths — `/search`, `/duplicates`, and `/content` now answer only from the requested scope's roots: a scoped search widens its retrieval window rather than returning fewer than `top_k` results when out-of-scope documents crowd the nearest-neighbour window, duplicate detection never returns an out-of-scope candidate, and an out-of-scope `/content` path is refused with the existing `PATH_OUTSIDE_ROOTS` error. Response envelopes are unchanged.

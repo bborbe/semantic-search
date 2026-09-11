@@ -210,7 +210,9 @@ class VaultIndexer:
         Components and weights:
         - Filename (no extension, separators → spaces): 3x
         - Metadata title: 3x
-        - Metadata tags/aliases: 2x
+        - Metadata tags/aliases: 2x (tags lowercased, deduplicated with the first
+          occurrence winning and ordered by first appearance — frontmatter tags
+          first, then inline body tags; aliases appended after them in original case)
         - First H1 heading: 2x
         - Body (first 500 words, frontmatter removed): 1x
         """
@@ -259,9 +261,17 @@ class VaultIndexer:
         # Inline #tags from body
         inline_tags = self._extract_inline_tags(content_without_frontmatter)
 
-        # Merge and dedupe (lowercase)
-        all_tags = {t.lower() for t in tags_aliases} | {t.lower() for t in inline_tags}
-        tags_aliases = list(all_tags)
+        # Merge and dedupe (lowercase), preserving first-appearance order:
+        # frontmatter tags first, then inline body tags.
+        seen: set[str] = set()
+        ordered_tags: list[str] = []
+        for tag in [*tags_aliases, *inline_tags]:
+            lowered = tag.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            ordered_tags.append(lowered)
+        tags_aliases = ordered_tags
 
         # Aliases
         if frontmatter_data.get("aliases"):
