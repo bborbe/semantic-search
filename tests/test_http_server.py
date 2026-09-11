@@ -622,7 +622,10 @@ class TestMcpMount:
         without the required MCP handshake headers (no Accept: text/event-stream,
         no session init) is rejected by the MCP transport with HTTP 400
         (Bad Request) or 406 (Not Acceptable) — never 404, and never 405
-        (both GET and POST are accepted by the transport).
+        (both GET and POST are accepted by the transport). The request carries
+        a valid scope so it passes the MCP scope guard and reaches the MCP
+        transport itself; an unscoped `/mcp` is refused by the guard instead
+        (see test_unscoped_mcp_refused_with_missing_scope).
 
         We assert the response is one of {400, 406} to tolerate minor version
         differences in the exact status code chosen by fastmcp, while proving
@@ -630,12 +633,24 @@ class TestMcpMount:
         """
         app, _ = http_app
         with TestClient(app) as client:
-            resp = client.get("/mcp")
+            resp = client.get("/mcp?scope=personal")
         assert resp.status_code in {400, 406}, (
             f"Expected 400 or 406 from mounted MCP handler, got {resp.status_code}. "
             f"A 404 means the route is not mounted; a 405 means the transport "
             f"rejected the method, which contradicts fastmcp streamable-http behavior."
         )
+
+    def test_unscoped_mcp_refused_with_missing_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
+        """The MCP scope guard refuses a request naming no scope with HTTP 400
+        and MISSING_SCOPE, before the MCP protocol layer runs."""
+        app, (root_a, _) = http_app
+        with TestClient(app) as client:
+            resp = client.get("/mcp")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "MISSING_SCOPE"
+        assert str(root_a) not in resp.text
 
 
 class TestVersionFlag:

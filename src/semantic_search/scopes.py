@@ -3,10 +3,17 @@
 The scope map is a YAML file mapping a scope name to an ordered list of
 absolute root directories that scope is allowed to see. This module owns
 loading and shape-checking the map, checking that its roots are usable on
-this host, and resolving a request's scope name to its root list. It carries
-no per-request state: request-scoped transport belongs to a later prompt.
+this host, and resolving a request's scope name to its root list.
+
+It also owns the request-scope transport: a context variable carrying the
+resolved roots the HTTP layer bound for the MCP session being served, plus a
+process-global marker for whether this process serves the HTTP mount. A
+context variable is the correct primitive because it is per-task: two MCP
+sessions in flight at once each see their own value, and the value a tool
+body observes is the one bound on the request that established its session.
 """
 
+import contextvars
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -15,6 +22,16 @@ from pathlib import Path
 import yaml
 
 SCOPE_MAP_ENV = "SEMANTIC_SCOPE_MAP"
+
+# The resolved roots bound for the MCP session currently being served, or
+# None when nothing is bound (the stdio transport). Bound by the HTTP layer's
+# MCP guard at session establishment; read by the tools in `server.py`.
+_request_roots_var: contextvars.ContextVar[tuple[Path, ...] | None] = contextvars.ContextVar(
+    "request_roots", default=None
+)
+
+# True once this process has constructed the HTTP app (see `mark_http_transport`).
+_http_transport = False
 
 
 class ScopeConfigError(Exception):
@@ -132,3 +149,40 @@ def resolve_scope(scope_map: ScopeMap, raw: str | None) -> tuple[Path, ...]:
     if roots is None:
         raise UnknownScopeError(f"unknown scope {raw!r}")
     return roots
+
+
+def set_request_roots(roots: tuple[Path, ...]) -> contextvars.Token[tuple[Path, ...] | None]:
+    """Bind the roots resolved for the request being served; return the reset token.
+
+    The binding lives in the current asyncio task's context, so a session's
+    receive-loop task (spawned from the request that created it) sees the
+    value bound here, while a concurrent request in another task sees its own.
+    """
+    return _request_roots_var.set(roots)
+
+
+def reset_request_roots(token: contextvars.Token[tuple[Path, ...] | None]) -> None:
+    """Undo a previous `set_request_roots`."""
+    _request_roots_var.reset(token)
+
+
+def current_request_roots() -> tuple[Path, ...] | None:
+    """Return the roots bound for the MCP session being served, or None when nothing is bound."""
+    return _request_roots_var.get()
+
+
+def mark_http_transport() -> None:
+    """Mark this process as serving the HTTP mount (called once, at app construction)."""
+    global _http_transport
+    _http_transport = True
+
+
+def http_transport() -> bool:
+    """Return True when this process serves the HTTP mount."""
+    return _http_transport
+
+
+def reset_http_transport() -> None:
+    """Clear the HTTP-transport marker. Test seam: pytest shares one process across modules."""
+    global _http_transport
+    _http_transport = False

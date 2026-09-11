@@ -9,12 +9,15 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ._version import __version__
 from .factory import create_indexer, declare_index_roots
@@ -26,8 +29,11 @@ from .scopes import (
     ScopeRequestError,
     UnknownScopeError,
     load_scope_map,
+    mark_http_transport,
+    reset_request_roots,
     resolve_scope,
     scope_map_path_from_env,
+    set_request_roots,
     validate_scope_map,
 )
 from .server import mcp  # reuse the existing FastMCP instance with tools registered
@@ -96,6 +102,52 @@ def _scope_error_token(exc: ScopeRequestError) -> str:
     raise TypeError(f"unhandled scope error type: {type(exc).__name__}")
 
 
+class _MCPScopeMiddleware:
+    """Pure ASGI middleware that scopes every request to the MCP mount.
+
+    The MCP mount is served at `/mcp` and any sub-path of it; every other path
+    (the REST routes) passes through untouched, and so does every non-HTTP
+    scope — Starlette's lifespan travels through the same middleware stack as
+    a scope with no `"path"` key, so the type check must come first.
+
+    For an MCP request the `?scope=` query parameter is resolved against the
+    injected scope map *before* the MCP protocol layer runs: a request naming
+    no scope is refused with HTTP 400 (`MISSING_SCOPE`), a request naming an
+    unknown scope is refused with HTTP 400 (`UNKNOWN_SCOPE`), and a valid
+    scope's roots are bound via `set_request_roots` for the downstream app.
+    The binding is a context variable, so the value a tool body reads is the
+    one bound on the request that established its MCP session, and two
+    concurrent sessions never observe each other's roots.
+    """
+
+    def __init__(self, app: ASGIApp, scope_map: ScopeMap) -> None:
+        self.app = app
+        self.scope_map = scope_map
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if path != "/mcp" and not path.startswith("/mcp/"):
+            await self.app(scope, receive, send)
+            return
+        raw_scope = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("scope", [None])[
+            0
+        ]
+        try:
+            roots = resolve_scope(self.scope_map, raw_scope)
+        except ScopeRequestError as exc:
+            response = JSONResponse({"error": _scope_error_token(exc)}, status_code=400)
+            await response(scope, receive, send)
+            return
+        token = set_request_roots(roots)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_request_roots(token)
+
+
 async def reindex(request: Request) -> JSONResponse:
     """Handle /reindex endpoint.
 
@@ -151,6 +203,7 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             are passed into the indexer call as a per-request argument, so
             each read path answers only from that scope's roots.
     """
+    mark_http_transport()
     mcp_app = mcp.http_app(path="/mcp")
     union_root_strs = [str(p) for p in scope_map.union_roots]
 
@@ -346,7 +399,11 @@ def build_app(scope_map: ScopeMap) -> Starlette:
         Route("/reindex", reindex, methods=["GET", "POST"]),
         Mount("/", app=mcp_app),
     ]
-    return Starlette(routes=routes, lifespan=combined_lifespan)
+    return Starlette(
+        routes=routes,
+        lifespan=combined_lifespan,
+        middleware=[Middleware(_MCPScopeMiddleware, scope_map=scope_map)],
+    )
 
 
 def main() -> None:

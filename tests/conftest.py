@@ -24,6 +24,20 @@ def _isolated_indexer_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
+@pytest.fixture(autouse=True)
+def _reset_http_transport() -> None:
+    """Clear the process-wide HTTP-transport marker before each test.
+
+    pytest collects every module into a single process: the modules that
+    construct an app (test_http_server, test_mcp_scoping) set the marker via
+    build_app, and both sort before test_server, whose direct tool calls must
+    keep seeing the stdio transport. This seam exists for no other reason.
+    """
+    from semantic_search.scopes import reset_http_transport
+
+    reset_http_transport()
+
+
 @pytest.fixture
 def temp_vault(tmp_path: Path) -> Path:
     """Create a temporary vault directory with test markdown files."""

@@ -12,6 +12,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 - feat: scope the read paths — `/search`, `/duplicates`, and `/content` now answer only from the requested scope's roots: a scoped search widens its retrieval window rather than returning fewer than `top_k` results when out-of-scope documents crowd the nearest-neighbour window, duplicate detection never returns an out-of-scope candidate, and an out-of-scope `/content` path is refused with the existing `PATH_OUTSIDE_ROOTS` error. Response envelopes are unchanged.
 - feat: the HTTP server now requires a `scope` query parameter on `/search`, `/duplicates`, and `/content`, and refuses a request that names no scope or an unknown scope with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) instead of answering it from the full index. The scope map lives in `scopes.yaml` and is named by the `SEMANTIC_SCOPE_MAP` environment variable.
+- feat: scope the MCP-over-HTTP mount — a request to `/mcp` that names no scope or an unknown scope is refused with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) by a pure ASGI middleware before the MCP protocol layer runs, and the `search_related`, `check_duplicates`, and `get_content` tools answer only from the scope bound when their MCP session was established. The scope travels as context-scoped state the HTTP layer binds, never anything stored on the shared indexer; the stdio transport is untouched and still answers from `CONTENT_PATH` with no scope handling.
 
 ## v0.19.0
 

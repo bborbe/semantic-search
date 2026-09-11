@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [004-per-vault-scoping]
+summary: 'Carried the scope onto the HTTP-mounted MCP surface: a pure ASGI middleware in http_server.py refuses unscoped/unknown /mcp requests with HTTP 400 (MISSING_SCOPE/UNKNOWN_SCOPE) before the MCP protocol layer and binds the resolved roots as context-scoped state (scopes.py context variable + HTTP-transport marker) that the server.py tools read session-scoped, with a reset seam in conftest.py, a rewritten TestMcpMount, and 8 new real-socket probes in tests/test_mcp_scoping.py; the interleave probe was proven load-bearing — it failed red under a temporary store-transport mutation (the first response carried the second scope''s paths) and went green again after restoring the context-variable transport. make precommit exits 0.'
+execution_id: semantic-search-exec-028-spec-004-mcp-surface-scope
+dark-factory-version: dev
 created: "2026-09-11T11:27:52Z"
 queued: "2026-09-11T12:32:41Z"
+started: "2026-09-11T13:08:51Z"
+completed: "2026-09-11T13:20:59Z"
 ---
 
 # Carry the scope on the HTTP-mounted MCP surface
