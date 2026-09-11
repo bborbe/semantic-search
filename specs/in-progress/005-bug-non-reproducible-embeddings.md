@@ -1,8 +1,9 @@
 ---
-status: prompted
+status: verifying
 approved: "2026-09-11T19:42:53Z"
 generating: "2026-09-11T20:03:13Z"
 prompted: "2026-09-11T20:03:13Z"
+verifying: "2026-09-11T20:15:35Z"
 branch: dark-factory/bug-non-reproducible-embeddings
 ---
 
