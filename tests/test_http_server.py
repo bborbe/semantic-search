@@ -152,7 +152,7 @@ class TestSearchEndpoint:
         assert "Missing 'q' parameter" in resp.json()["error"]
 
     def test_search_with_query(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
-        app, _ = http_app
+        app, (root_a, root_b) = http_app
         mock_indexer = MagicMock()
         mock_indexer.search.return_value = [
             {"path": "a.md", "score": 0.9},
@@ -165,7 +165,7 @@ class TestSearchEndpoint:
         data = resp.json()
         assert data["query"] == "test query"
         assert data["count"] == 2
-        mock_indexer.search.assert_called_once_with("test query", 3)
+        mock_indexer.search.assert_called_once_with("test query", 3, (root_a, root_b))
 
     def test_search_runs_in_threadpool(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
         """Sync indexer.search must be awaited via run_in_threadpool so a slow
@@ -180,7 +180,9 @@ class TestSearchEndpoint:
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
-        def fake_search(q: str, top_k: int) -> list[dict[str, object]]:
+        def fake_search(
+            q: str, top_k: int, roots: tuple[Path, ...] | None
+        ) -> list[dict[str, object]]:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "a.md", "score": 0.9}]
 
@@ -254,7 +256,7 @@ class TestDuplicatesEndpoint:
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
-        def fake_find(file_path: str) -> list[dict[str, object]]:
+        def fake_find(file_path: str, roots: tuple[Path, ...] | None) -> list[dict[str, object]]:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "similar.md", "score": 0.9}]
 
@@ -351,7 +353,7 @@ class TestContentEndpoint:
         self, http_app: tuple[Starlette, tuple[Path, ...]]
     ) -> None:
         """GET /content?path=...&snippet=true&query=TOKEN&context_lines=5 returns snippet."""
-        app, _ = http_app
+        app, (root_a, root_b) = http_app
         mock_indexer = MagicMock()
         mock_indexer.get_content.return_value = {
             "path": "/vault/test.md",
@@ -368,14 +370,14 @@ class TestContentEndpoint:
         data = resp.json()
         assert data["mode"] == "snippet"
         mock_indexer.get_content.assert_called_once_with(
-            "/vault/test.md", True, "UNIQUE_TOKEN_XYZ", 5
+            "/vault/test.md", True, "UNIQUE_TOKEN_XYZ", 5, (root_a, root_b)
         )
 
     def test_content_snippet_mode_without_query(
         self, http_app: tuple[Starlette, tuple[Path, ...]]
     ) -> None:
         """GET /content?path=...&snippet=true returns snippet mode with no query."""
-        app, _ = http_app
+        app, (root_a, root_b) = http_app
         mock_indexer = MagicMock()
         mock_indexer.get_content.return_value = {
             "path": "/vault/test.md",
@@ -388,7 +390,9 @@ class TestContentEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["mode"] == "snippet"
-        mock_indexer.get_content.assert_called_once_with("/vault/test.md", True, None, 20)
+        mock_indexer.get_content.assert_called_once_with(
+            "/vault/test.md", True, None, 20, (root_a, root_b)
+        )
 
     def test_content_path_outside_roots_returns_400(
         self, http_app: tuple[Starlette, tuple[Path, ...]]
@@ -468,7 +472,7 @@ class TestContentEndpoint:
         self, http_app: tuple[Starlette, tuple[Path, ...]]
     ) -> None:
         """snippet=true (lowercase) is parsed as True."""
-        app, _ = http_app
+        app, (root_a, root_b) = http_app
         mock_indexer = MagicMock()
         mock_indexer.get_content.return_value = {
             "path": "/v/test.md",
@@ -479,13 +483,15 @@ class TestContentEndpoint:
         with TestClient(app) as client:
             resp = client.get("/content?path=test.md&snippet=true&scope=personal")
         assert resp.status_code == 200
-        mock_indexer.get_content.assert_called_once_with("test.md", True, None, 20)
+        mock_indexer.get_content.assert_called_once_with(
+            "test.md", True, None, 20, (root_a, root_b)
+        )
 
     def test_content_snippet_param_parses_false_and_empty_as_false(
         self, http_app: tuple[Starlette, tuple[Path, ...]]
     ) -> None:
         """snippet=false and snippet= (empty) are parsed as False."""
-        app, _ = http_app
+        app, (root_a, root_b) = http_app
         mock_indexer = MagicMock()
         mock_indexer.get_content.return_value = {
             "path": "/v/test.md",
@@ -497,7 +503,9 @@ class TestContentEndpoint:
             # snippet=false
             resp = client.get("/content?path=test.md&snippet=false&scope=personal")
             assert resp.status_code == 200
-            mock_indexer.get_content.assert_called_with("test.md", False, None, 20)
+            mock_indexer.get_content.assert_called_with(
+                "test.md", False, None, 20, (root_a, root_b)
+            )
 
     def test_content_invalid_context_lines_returns_400(
         self, http_app: tuple[Starlette, tuple[Path, ...]]

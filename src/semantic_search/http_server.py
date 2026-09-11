@@ -147,9 +147,9 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             request to /search, /duplicates, or /content has its `scope`
             parameter resolved against it, and a request naming no scope or
             an unknown scope is refused with HTTP 400 (MISSING_SCOPE /
-            UNKNOWN_SCOPE) before the readiness gate. Read paths are not
-            narrowed here — a valid scope is still answered from the union
-            index in this prompt.
+            UNKNOWN_SCOPE) before the readiness gate. A valid scope's roots
+            are passed into the indexer call as a per-request argument, so
+            each read path answers only from that scope's roots.
     """
     mcp_app = mcp.http_app(path="/mcp")
     union_root_strs = [str(p) for p in scope_map.union_roots]
@@ -194,9 +194,11 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             if not q:
                 return JSONResponse({"error": "Missing 'q' parameter"}, status_code=400)
 
-            # scope gate: refuse a missing or unknown scope before the readiness gate
+            # scope gate: resolve the scope (refusing a missing or unknown
+            # scope) before the readiness gate, then pass its roots through
+            # to the search as a per-request argument.
             try:
-                resolve_scope(scope_map, request.query_params.get("scope"))
+                roots = resolve_scope(scope_map, request.query_params.get("scope"))
             except ScopeRequestError as e:
                 return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 
@@ -206,7 +208,7 @@ def build_app(scope_map: ScopeMap) -> Starlette:
 
             top_k = int(request.query_params.get("top_k", "5"))
             indexer = get_indexer()
-            results: list[Any] = await run_in_threadpool(indexer.search, q, top_k)
+            results: list[Any] = await run_in_threadpool(indexer.search, q, top_k, roots)
             return JSONResponse({"query": q, "results": results, "count": len(results)})
         except Exception as e:
             logger.exception("Error handling /search request")
@@ -219,9 +221,11 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             if not file_path:
                 return JSONResponse({"error": "Missing 'file' parameter"}, status_code=400)
 
-            # scope gate: refuse a missing or unknown scope before the readiness gate
+            # scope gate: resolve the scope (refusing a missing or unknown
+            # scope) before the readiness gate, then pass its roots through
+            # to the duplicate check as a per-request argument.
             try:
-                resolve_scope(scope_map, request.query_params.get("scope"))
+                roots = resolve_scope(scope_map, request.query_params.get("scope"))
             except ScopeRequestError as e:
                 return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 
@@ -232,7 +236,7 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             threshold = float(request.query_params.get("threshold", "0.85"))
             indexer = get_indexer()
             indexer.duplicate_threshold = threshold
-            results = await run_in_threadpool(indexer.find_duplicates, file_path)
+            results = await run_in_threadpool(indexer.find_duplicates, file_path, roots)
 
             if isinstance(results, dict) and "error" in results:
                 return JSONResponse({"error": str(results["error"])}, status_code=400)
@@ -263,9 +267,9 @@ def build_app(scope_map: ScopeMap) -> Starlette:
                 status_code=400,
             )
 
-        # Step 2: scope gate
+        # Step 2: scope gate (resolve the scope and pass its roots through)
         try:
-            resolve_scope(scope_map, request.query_params.get("scope"))
+            roots = resolve_scope(scope_map, request.query_params.get("scope"))
         except ScopeRequestError as e:
             return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 
@@ -299,7 +303,7 @@ def build_app(scope_map: ScopeMap) -> Starlette:
         indexer = get_indexer()
         try:
             result = await run_in_threadpool(
-                indexer.get_content, path, snippet, query, context_lines
+                indexer.get_content, path, snippet, query, context_lines, roots
             )
         except ValueError:
             logger.warning("path not in indexed roots: %s", path)

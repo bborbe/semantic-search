@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [004-per-vault-scoping]
+summary: 'Scoped the search, duplicate, and content read paths: added _path_within_roots, roots params with geometric window widening on search, and per-request scope pass-through in the HTTP handlers, with deterministic-encoder scoping probes (including the fail-open filter probe) and updated call-shape assertions'
+execution_id: semantic-search-exec-027-spec-004-scoped-read-paths
+dark-factory-version: dev
 created: "2026-09-11T11:27:52Z"
 queued: "2026-09-11T12:32:41Z"
+started: "2026-09-11T12:58:41Z"
+completed: "2026-09-11T13:08:50Z"
 ---
 
 # Scope the search, duplicate, and content read paths
