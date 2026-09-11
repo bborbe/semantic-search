@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.20.0
 
 - feat: scope the read paths — `/search`, `/duplicates`, and `/content` now answer only from the requested scope's roots: a scoped search widens its retrieval window rather than returning fewer than `top_k` results when out-of-scope documents crowd the nearest-neighbour window, duplicate detection never returns an out-of-scope candidate, and an out-of-scope `/content` path is refused with the existing `PATH_OUTSIDE_ROOTS` error. Response envelopes are unchanged.
 - feat: the HTTP server now requires a `scope` query parameter on `/search`, `/duplicates`, and `/content`, and refuses a request that names no scope or an unknown scope with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) instead of answering it from the full index. The scope map lives in `scopes.yaml` and is named by the `SEMANTIC_SCOPE_MAP` environment variable.
