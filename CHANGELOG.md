@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: the HTTP server now requires a `scope` query parameter on `/search`, `/duplicates`, and `/content`, and refuses a request that names no scope or an unknown scope with HTTP 400 (`MISSING_SCOPE` / `UNKNOWN_SCOPE`) instead of answering it from the full index. The scope map lives in `scopes.yaml` and is named by the `SEMANTIC_SCOPE_MAP` environment variable; a valid scope is still answered from the union index for now.
+
 ## v0.19.0
 
 - fix: route the /reindex endpoint through the compaction guard — a manual reindex can no longer run concurrently with an automatic compaction, and file changes made during a manual reindex are re-applied instead of being discarded by the post-rebuild swap.

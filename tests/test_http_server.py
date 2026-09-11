@@ -3,129 +3,171 @@
 import asyncio
 import re
 import sys
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
+from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from semantic_search.http_server import build_app, main
+from semantic_search.scopes import load_scope_map
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_state() -> None:
+    """Reset process-wide singletons before each test.
+
+    The factory singleton and the http_server readiness globals are process
+    wide: a stale indexer, declared root set, or readiness event left behind
+    by an earlier test would otherwise decide what a later test indexes or
+    serves.
+    """
+    import semantic_search.factory as factory
+    import semantic_search.http_server as http_server
+
+    factory.reset()
+    http_server._indexer = None
+    http_server._indexer_error = None
+    http_server._indexer_ready = asyncio.Event()
+
+
+@pytest.fixture
+def http_app(tmp_path: Path) -> tuple[Starlette, tuple[Path, ...]]:
+    """The app built from a temp scope map over temp roots, plus the union roots.
+
+    The temp map declares `personal` = [root-a, root-b] and `work` = [root-b],
+    so the union is (root-a, root-b).
+    """
+    root_a = tmp_path / "root-a"
+    root_b = tmp_path / "root-b"
+    root_a.mkdir()
+    root_b.mkdir()
+    map_path = tmp_path / "scopes.yaml"
+    map_path.write_text(
+        f"scopes:\n  personal:\n    - {root_a}\n    - {root_b}\n  work:\n    - {root_b}\n"
+    )
+    scope_map = load_scope_map(map_path)
+    return build_app(scope_map), (root_a, root_b)
+
+
+@pytest.fixture
+def no_background_build() -> None:
+    """Make the background indexer build a fast no-op.
+
+    Tests that never set _indexer_ready would otherwise launch the real
+    indexer build, which instantiates the real embedding model — unavailable
+    in the container. Patching it keeps such tests fast and deterministic.
+    """
+    import semantic_search.http_server as http_server
+
+    async def noop(roots: tuple[Path, ...]) -> None:
+        return None
+
+    with patch.object(http_server, "_build_indexer_in_background", side_effect=noop):
+        yield
+
+
+def _serve_from_mock(mock_indexer: MagicMock) -> None:
+    """Wire the http_server globals so the app serves from mock_indexer as ready."""
+    import semantic_search.http_server as http_server
+
+    ready_event = asyncio.Event()
+    ready_event.set()
+    http_server._indexer_ready = ready_event
+    http_server._indexer = mock_indexer
+    http_server._indexer_error = None
 
 
 class TestHealthEndpoint:
-    def test_health_returns_ok(self) -> None:
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        original_error = http_server._indexer_error
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.meta = {"0": {}, "1": {}}
-            http_server._indexer = mock_indexer
-            http_server._indexer_error = None
-            with TestClient(build_app()) as client:
-                resp = client.get("/health")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
-            http_server._indexer_error = original_error
+    def test_health_returns_ok(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
+        app, union_roots = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.meta = {"0": {}, "1": {}}
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert "paths" in data
+        assert data["paths"] == [str(p) for p in union_roots]
         assert data["indexed_files"] == 2
 
-    def test_health_returns_indexing_status_when_not_ready(self) -> None:
+    def test_health_returns_indexing_status_when_not_ready(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
         """Before the background build finishes, /health must report
         status=indexing without blocking on the indexer."""
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        original_error = http_server._indexer_error
-        try:
-            http_server._indexer_ready = asyncio.Event()  # unset
-            http_server._indexer = None
-            http_server._indexer_error = None
-            with TestClient(build_app()) as client:
-                resp = client.get("/health")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
-            http_server._indexer_error = original_error
+        app, union_roots = http_app
+        # globals left in the reset state: _indexer_ready unset, _indexer None
+        with TestClient(app) as client:
+            resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "indexing"
         assert data["ready"] is False
-        assert "paths" in data
+        assert data["paths"] == [str(p) for p in union_roots]
 
-    def test_health_returns_ok_when_ready(self) -> None:
+    def test_health_returns_ok_when_ready(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Once the Event is set and _indexer is populated, /health returns
         the full ready response with indexed_files count."""
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        original_error = http_server._indexer_error
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.meta = {"0": {}, "1": {}, "2": {}}
-            http_server._indexer = mock_indexer
-            http_server._indexer_error = None
-            with TestClient(build_app()) as client:
-                resp = client.get("/health")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
-            http_server._indexer_error = original_error
+        app, union_roots = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.meta = {"0": {}, "1": {}, "2": {}}
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
         assert data["ready"] is True
         assert data["indexed_files"] == 3
-        assert "paths" in data
+        assert data["paths"] == [str(p) for p in union_roots]
+
+    def test_health_with_scope_param_returns_same_body(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
+        """/health is scopeless: a scope parameter must not change the body."""
+        app, union_roots = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.meta = {"0": {}}
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            plain = client.get("/health").json()
+            scoped = client.get("/health?scope=personal").json()
+        assert plain == scoped
+        assert scoped["paths"] == [str(p) for p in union_roots]
 
 
 class TestSearchEndpoint:
-    def test_search_missing_query_returns_400(self) -> None:
-        with TestClient(build_app()) as client:
+    def test_search_missing_query_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, _ = http_app
+        with TestClient(app) as client:
             resp = client.get("/search")
         assert resp.status_code == 400
         assert "Missing 'q' parameter" in resp.json()["error"]
 
-    def test_search_with_query(self) -> None:
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.search.return_value = [
-                {"path": "a.md", "score": 0.9},
-                {"path": "b.md", "score": 0.8},
-            ]
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/search?q=test+query&top_k=3")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+    def test_search_with_query(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.search.return_value = [
+            {"path": "a.md", "score": 0.9},
+            {"path": "b.md", "score": 0.8},
+        ]
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/search?q=test+query&top_k=3&scope=personal")
         assert resp.status_code == 200
         data = resp.json()
         assert data["query"] == "test query"
         assert data["count"] == 2
         mock_indexer.search.assert_called_once_with("test query", 3)
 
-    def test_search_runs_in_threadpool(self) -> None:
+    def test_search_runs_in_threadpool(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
         """Sync indexer.search must be awaited via run_in_threadpool so a slow
         query does not block the asyncio event loop.
 
@@ -134,8 +176,7 @@ class TestSearchEndpoint:
         """
         import threading
 
-        import semantic_search.http_server as http_server
-
+        app, _ = http_app
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
@@ -143,20 +184,11 @@ class TestSearchEndpoint:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "a.md", "score": 0.9}]
 
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.search.side_effect = fake_search
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/search?q=hello&top_k=5")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        mock_indexer = MagicMock()
+        mock_indexer.search.side_effect = fake_search
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/search?q=hello&top_k=5&scope=personal")
 
         assert resp.status_code == 200
         assert len(observed_thread_ids) == 1
@@ -165,32 +197,23 @@ class TestSearchEndpoint:
             "to a worker thread via run_in_threadpool"
         )
 
-    def test_search_returns_503_when_not_ready(self) -> None:
+    def test_search_returns_503_when_not_ready(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """While the index is still building, /search returns 503 with a
         Retry-After header — not a 500 and not a hang."""
-        from unittest.mock import patch
-
         import semantic_search.http_server as http_server
 
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
+        app, _ = http_app
 
-        async def never_completes() -> None:
+        async def never_completes(roots: tuple[Path, ...]) -> None:
             await asyncio.Event().wait()
 
-        try:
-            http_server._indexer_ready = asyncio.Event()  # unset
-            http_server._indexer = None
-            with (
-                patch.object(
-                    http_server, "_build_indexer_in_background", side_effect=never_completes
-                ),
-                TestClient(build_app()) as client,
-            ):
-                resp = client.get("/search?q=hello")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        with (
+            patch.object(http_server, "_build_indexer_in_background", side_effect=never_completes),
+            TestClient(app) as client,
+        ):
+            resp = client.get("/search?q=hello&scope=personal")
         assert resp.status_code == 503
         assert resp.headers.get("retry-after") == "5"
         data = resp.json()
@@ -199,41 +222,35 @@ class TestSearchEndpoint:
 
 
 class TestDuplicatesEndpoint:
-    def test_duplicates_missing_file_returns_400(self) -> None:
-        with TestClient(build_app()) as client:
+    def test_duplicates_missing_file_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, _ = http_app
+        with TestClient(app) as client:
             resp = client.get("/duplicates")
         assert resp.status_code == 400
         assert "Missing 'file' parameter" in resp.json()["error"]
 
-    def test_duplicates_with_file(self) -> None:
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.find_duplicates.return_value = [{"path": "similar.md", "score": 0.95}]
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/duplicates?file=note.md&threshold=0.9")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+    def test_duplicates_with_file(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.find_duplicates.return_value = [{"path": "similar.md", "score": 0.95}]
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/duplicates?file=note.md&threshold=0.9&scope=personal")
         assert resp.status_code == 200
         data = resp.json()
         assert data["file"] == "note.md"
         assert data["threshold"] == 0.9
         assert data["count"] == 1
 
-    def test_duplicates_runs_in_threadpool(self) -> None:
+    def test_duplicates_runs_in_threadpool(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Sync indexer.find_duplicates must be awaited via run_in_threadpool."""
         import threading
 
-        import semantic_search.http_server as http_server
-
+        app, _ = http_app
         main_thread_id = threading.get_ident()
         observed_thread_ids: list[int] = []
 
@@ -241,20 +258,11 @@ class TestDuplicatesEndpoint:
             observed_thread_ids.append(threading.get_ident())
             return [{"path": "similar.md", "score": 0.9}]
 
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.find_duplicates.side_effect = fake_find
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/duplicates?file=note.md")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        mock_indexer = MagicMock()
+        mock_indexer.find_duplicates.side_effect = fake_find
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/duplicates?file=note.md&scope=personal")
 
         assert resp.status_code == 200
         assert len(observed_thread_ids) == 1
@@ -263,29 +271,19 @@ class TestDuplicatesEndpoint:
             "dispatched via run_in_threadpool"
         )
 
-    def test_duplicates_indexer_returns_error_dict_returns_400(self) -> None:
+    def test_duplicates_indexer_returns_error_dict_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Preserves rest_server.py L112-114: when indexer.find_duplicates returns
         a dict with an 'error' key (e.g., file not indexed), the handler must
         forward it as a 400 JSON response, not a 200 success.
         """
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.find_duplicates.return_value = {
-                "error": "File not found in index: missing.md"
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/duplicates?file=missing.md")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.find_duplicates.return_value = {"error": "File not found in index: missing.md"}
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/duplicates?file=missing.md&scope=personal")
         assert resp.status_code == 400
         data = resp.json()
         assert "error" in data
@@ -293,52 +291,34 @@ class TestDuplicatesEndpoint:
 
 
 class TestReindexEndpoint:
-    def test_reindex_post(self) -> None:
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.meta = {}
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.post("/reindex")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+    def test_reindex_post(self, http_app: tuple[Starlette, tuple[Path, ...]]) -> None:
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.meta = {}
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.post("/reindex")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
-    def test_reindex_returns_409_when_rebuild_in_progress(self) -> None:
+    def test_reindex_returns_409_when_rebuild_in_progress(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """A second /reindex while a rebuild is in flight must return 409 with
         REINDEX_IN_PROGRESS, not start another rebuild.
 
-        force_rebuild returns False when a rebuild is already running; the
+        force_rebuild returns False when a rebuild is already in flight; the
         handler must surface that as a busy response. Assert on the
         deserialized response so the error code is proven to survive
         serialization to the wire.
         """
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.meta = {}
-            mock_indexer.force_rebuild.return_value = False
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.post("/reindex")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.meta = {}
+        mock_indexer.force_rebuild.return_value = False
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.post("/reindex")
         assert resp.status_code == 409
         data = resp.json()
         assert data["error"]["code"] == "REINDEX_IN_PROGRESS"
@@ -347,64 +327,43 @@ class TestReindexEndpoint:
 class TestContentEndpoint:
     """Tests for GET /content endpoint."""
 
-    def test_content_returns_200_with_full_content(self) -> None:
+    def test_content_returns_200_with_full_content(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """GET /content?path=file returns 200 with path, content, mode fields."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.return_value = {
-                "path": "/vault/test.md",
-                "content": "Full content",
-                "mode": "full",
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=/vault/test.md")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.return_value = {
+            "path": "/vault/test.md",
+            "content": "Full content",
+            "mode": "full",
+        }
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=/vault/test.md&scope=personal")
         assert resp.status_code == 200
         data = resp.json()
         assert data["path"] == "/vault/test.md"
         assert data["content"] == "Full content"
         assert data["mode"] == "full"
 
-    def test_content_snippet_mode_with_query(self) -> None:
+    def test_content_snippet_mode_with_query(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """GET /content?path=...&snippet=true&query=TOKEN&context_lines=5 returns snippet."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.return_value = {
-                "path": "/vault/test.md",
-                "content": "...UNIQUE_TOKEN_XYZ...",
-                "mode": "snippet",
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get(
-                    "/content?path=/vault/test.md&snippet=true&query=UNIQUE_TOKEN_XYZ&context_lines=5"
-                )
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.return_value = {
+            "path": "/vault/test.md",
+            "content": "...UNIQUE_TOKEN_XYZ...",
+            "mode": "snippet",
+        }
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get(
+                "/content?path=/vault/test.md&snippet=true&query=UNIQUE_TOKEN_XYZ"
+                "&context_lines=5&scope=personal"
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert data["mode"] == "snippet"
@@ -412,248 +371,242 @@ class TestContentEndpoint:
             "/vault/test.md", True, "UNIQUE_TOKEN_XYZ", 5
         )
 
-    def test_content_snippet_mode_without_query(self) -> None:
+    def test_content_snippet_mode_without_query(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """GET /content?path=...&snippet=true returns snippet mode with no query."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.return_value = {
-                "path": "/vault/test.md",
-                "content": "First lines...",
-                "mode": "snippet",
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=/vault/test.md&snippet=true")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.return_value = {
+            "path": "/vault/test.md",
+            "content": "First lines...",
+            "mode": "snippet",
+        }
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=/vault/test.md&snippet=true&scope=personal")
         assert resp.status_code == 200
         data = resp.json()
         assert data["mode"] == "snippet"
         mock_indexer.get_content.assert_called_once_with("/vault/test.md", True, None, 20)
 
-    def test_content_path_outside_roots_returns_400(self) -> None:
+    def test_content_path_outside_roots_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Path outside vault roots returns 400 with PATH_OUTSIDE_ROOTS code."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.side_effect = ValueError("path not in indexed roots")
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=/etc/passwd")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.side_effect = ValueError("path not in indexed roots")
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=/etc/passwd&scope=personal")
         assert resp.status_code == 400
         data = resp.json()
         assert data["error"]["code"] == "PATH_OUTSIDE_ROOTS"
 
-    def test_content_missing_file_returns_404(self) -> None:
+    def test_content_missing_file_returns_404(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Path inside roots but file missing returns 404 with FILE_NOT_FOUND code."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.side_effect = FileNotFoundError("file not found: missing.md")
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=missing.md")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.side_effect = FileNotFoundError("file not found: missing.md")
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=missing.md&scope=personal")
         assert resp.status_code == 404
         data = resp.json()
         assert data["error"]["code"] == "FILE_NOT_FOUND"
 
-    def test_content_missing_path_param_returns_400(self) -> None:
+    def test_content_missing_path_param_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
         """Missing path param returns 400 with MISSING_PATH code."""
-        import asyncio
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        with TestClient(app) as client:
+            resp = client.get("/content")
         assert resp.status_code == 400
         data = resp.json()
         assert data["error"]["code"] == "MISSING_PATH"
 
-    def test_content_unreadable_file_returns_422(self) -> None:
+    def test_content_unreadable_file_returns_422(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Non-UTF-8 file returns 422 with UNREADABLE_FILE code."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.side_effect = RuntimeError("could not read file")
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=/vault/binary.bin")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.side_effect = RuntimeError("could not read file")
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=/vault/binary.bin&scope=personal")
         assert resp.status_code == 422
         data = resp.json()
         assert data["error"]["code"] == "UNREADABLE_FILE"
 
-    def test_content_returns_503_when_not_ready(self) -> None:
+    def test_content_returns_503_when_not_ready(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """Before indexer is ready, /content returns 503 with Retry-After header."""
-        import asyncio
-        from unittest.mock import patch
-
         import semantic_search.http_server as http_server
 
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
+        app, _ = http_app
 
-        async def never_completes() -> None:
+        async def never_completes(roots: tuple[Path, ...]) -> None:
             await asyncio.Event().wait()
 
-        try:
-            http_server._indexer_ready = asyncio.Event()  # unset
-            http_server._indexer = None
-            with (
-                patch.object(
-                    http_server, "_build_indexer_in_background", side_effect=never_completes
-                ),
-                TestClient(build_app()) as client,
-            ):
-                resp = client.get("/content?path=test.md")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        with (
+            patch.object(http_server, "_build_indexer_in_background", side_effect=never_completes),
+            TestClient(app) as client,
+        ):
+            resp = client.get("/content?path=test.md&scope=personal")
         assert resp.status_code == 503
         assert resp.headers.get("retry-after") == "5"
         data = resp.json()
         assert data["ready"] is False
 
-    def test_content_snippet_param_parses_lowercase_true(self) -> None:
+    def test_content_snippet_param_parses_lowercase_true(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """snippet=true (lowercase) is parsed as True."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.return_value = {
-                "path": "/v/test.md",
-                "content": "...",
-                "mode": "snippet",
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=test.md&snippet=true")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.return_value = {
+            "path": "/v/test.md",
+            "content": "...",
+            "mode": "snippet",
+        }
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            resp = client.get("/content?path=test.md&snippet=true&scope=personal")
         assert resp.status_code == 200
         mock_indexer.get_content.assert_called_once_with("test.md", True, None, 20)
 
-    def test_content_snippet_param_parses_false_and_empty_as_false(self) -> None:
+    def test_content_snippet_param_parses_false_and_empty_as_false(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """snippet=false and snippet= (empty) are parsed as False."""
-        import asyncio
-        from unittest.mock import MagicMock
+        app, _ = http_app
+        mock_indexer = MagicMock()
+        mock_indexer.get_content.return_value = {
+            "path": "/v/test.md",
+            "content": "full",
+            "mode": "full",
+        }
+        _serve_from_mock(mock_indexer)
+        with TestClient(app) as client:
+            # snippet=false
+            resp = client.get("/content?path=test.md&snippet=false&scope=personal")
+            assert resp.status_code == 200
+            mock_indexer.get_content.assert_called_with("test.md", False, None, 20)
 
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            mock_indexer.get_content.return_value = {
-                "path": "/v/test.md",
-                "content": "full",
-                "mode": "full",
-            }
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                # snippet=false
-                resp = client.get("/content?path=test.md&snippet=false")
-                assert resp.status_code == 200
-                mock_indexer.get_content.assert_called_with("test.md", False, None, 20)
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
-
-    def test_content_invalid_context_lines_returns_400(self) -> None:
+    def test_content_invalid_context_lines_returns_400(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """context_lines=abc returns 400 with INVALID_CONTEXT_LINES code."""
-        import asyncio
-
-        import semantic_search.http_server as http_server
-
-        original_event = http_server._indexer_ready
-        original_indexer = http_server._indexer
-        try:
-            ready_event = asyncio.Event()
-            ready_event.set()
-            http_server._indexer_ready = ready_event
-            mock_indexer = MagicMock()
-            http_server._indexer = mock_indexer
-            with TestClient(build_app()) as client:
-                resp = client.get("/content?path=test.md&context_lines=abc")
-        finally:
-            http_server._indexer_ready = original_event
-            http_server._indexer = original_indexer
+        app, _ = http_app
+        _serve_from_mock(MagicMock())
+        with TestClient(app) as client:
+            resp = client.get("/content?path=test.md&context_lines=abc&scope=personal")
         assert resp.status_code == 400
         data = resp.json()
         assert data["error"]["code"] == "INVALID_CONTEXT_LINES"
 
 
+class TestScopeGate:
+    """Fail-closed: a request naming no scope or an unknown scope is refused
+    with HTTP 400 and the refusal token, before the readiness gate."""
+
+    def test_search_refuses_missing_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        with TestClient(app) as client:
+            resp = client.get("/search?q=hello")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "MISSING_SCOPE"
+        assert str(root_a) not in resp.text
+
+    def test_search_refuses_unknown_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        with TestClient(app) as client:
+            resp = client.get("/search?q=hello&scope=does-not-exist")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "UNKNOWN_SCOPE"
+        assert str(root_a) not in resp.text
+
+    def test_duplicates_refuses_missing_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        with TestClient(app) as client:
+            resp = client.get("/duplicates?file=note.md")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "MISSING_SCOPE"
+        assert str(root_a) not in resp.text
+
+    def test_duplicates_refuses_unknown_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        with TestClient(app) as client:
+            resp = client.get("/duplicates?file=note.md&scope=does-not-exist")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "UNKNOWN_SCOPE"
+        assert str(root_a) not in resp.text
+
+    def test_content_refuses_missing_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        in_union = root_a / "note.md"
+        with TestClient(app) as client:
+            resp = client.get(f"/content?path={in_union}")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "MISSING_SCOPE"
+        assert str(in_union) not in resp.text
+
+    def test_content_refuses_unknown_scope(
+        self, http_app: tuple[Starlette, tuple[Path, ...]], no_background_build: None
+    ) -> None:
+        app, (root_a, _) = http_app
+        in_union = root_a / "note.md"
+        with TestClient(app) as client:
+            resp = client.get(f"/content?path={in_union}&scope=does-not-exist")
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "UNKNOWN_SCOPE"
+        assert str(in_union) not in resp.text
+
+    def test_refusal_fires_before_readiness_gate(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
+        """With the index not ready, an unscoped /search is refused (400), not
+        503; a valid-scope /search still returns 503 with Retry-After."""
+        import semantic_search.http_server as http_server
+
+        app, _ = http_app
+
+        async def never_completes(roots: tuple[Path, ...]) -> None:
+            await asyncio.Event().wait()
+
+        # globals left in the reset state: _indexer_ready unset, _indexer None
+        with (
+            patch.object(http_server, "_build_indexer_in_background", side_effect=never_completes),
+            TestClient(app) as client,
+        ):
+            unscoped = client.get("/search?q=hello")
+            scoped = client.get("/search?q=hello&scope=personal")
+        assert unscoped.status_code == 400
+        assert unscoped.json()["error"] == "MISSING_SCOPE"
+        assert scoped.status_code == 503
+        assert scoped.headers.get("retry-after") == "5"
+
+
 class TestMcpMount:
-    def test_mcp_endpoint_returns_400_for_bare_get_not_404(self) -> None:
+    def test_mcp_endpoint_returns_400_for_bare_get_not_404(
+        self, http_app: tuple[Starlette, tuple[Path, ...]]
+    ) -> None:
         """MCP endpoint must be mounted and handled by fastmcp's streamable-http
         transport — NOT routed to Starlette's 404 handler.
 
@@ -667,7 +620,8 @@ class TestMcpMount:
         differences in the exact status code chosen by fastmcp, while proving
         the route is mounted and reaching the MCP handler.
         """
-        with TestClient(build_app()) as client:
+        app, _ = http_app
+        with TestClient(app) as client:
             resp = client.get("/mcp")
         assert resp.status_code in {400, 406}, (
             f"Expected 400 or 406 from mounted MCP handler, got {resp.status_code}. "
@@ -711,3 +665,25 @@ class TestVersionFlag:
         assert re.match(r"^semantic-search-http v[0-9]+\.[0-9]+", captured.out), (
             f"expected version on stdout, got: {captured.out!r}"
         )
+
+    def test_main_exits_nonzero_on_missing_scope_map_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Path,
+    ) -> None:
+        """Startup validation: a scope map naming a missing root makes main()
+        exit non-zero with a log line naming both the scope and the root."""
+        import logging
+
+        bad_map = tmp_path / "bad-scopes.yaml"
+        bad_map.write_text(f"scopes:\n  probe:\n    - {tmp_path / 'missing-root'}\n")
+        monkeypatch.setenv("SEMANTIC_SCOPE_MAP", str(bad_map))
+        monkeypatch.setattr(sys, "argv", ["semantic-search-http", "--port", "18999"])
+
+        with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code != 0
+        assert "probe" in caplog.text
+        assert "missing-root" in caplog.text

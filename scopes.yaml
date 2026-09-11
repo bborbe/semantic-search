@@ -1,0 +1,35 @@
+scopes:
+  personal:
+    - /Users/bborbe/Documents/Obsidian/Personal
+    - /Users/bborbe/Documents/Obsidian/Trading
+    - /Users/bborbe/Documents/Obsidian/Family
+    - /Users/bborbe/Documents/Obsidian/OpenClaw
+    - /Users/bborbe/Documents/Obsidian/Gaming
+    - /Users/bborbe/Documents/workspaces/trading/docs
+    - /Users/bborbe/Documents/workspaces/dark-factory/docs
+    - /Users/bborbe/Documents/workspaces/cqrs/docs
+    - /Users/bborbe/Documents/workspaces/coding/docs
+  brogrammers:
+    - /Users/bborbe/Documents/Obsidian/Brogrammers
+    - /Users/bborbe/Documents/workspaces/dark-factory/docs
+    - /Users/bborbe/Documents/workspaces/sm-octopus/docs
+    - /Users/bborbe/Documents/workspaces/coding/docs
+  boss:
+    - /Users/bborbe/Documents/Obsidian/Personal
+    - /Users/bborbe/Documents/Obsidian/Trading
+    - /Users/bborbe/Documents/Obsidian/Family
+    - /Users/bborbe/Documents/Obsidian/OpenClaw
+    - /Users/bborbe/Documents/Obsidian/Boss
+    - /Users/bborbe/Documents/workspaces/trading/docs
+    - /Users/bborbe/Documents/workspaces/dark-factory/docs
+    - /Users/bborbe/Documents/workspaces/cqrs/docs
+    - /Users/bborbe/Documents/workspaces/coding/docs
+  openbrain:
+    - /Users/bborbe/Documents/Obsidian/OpenBrain
+    - /Users/bborbe/Documents/Obsidian/Brogrammers
+    - /Users/bborbe/Documents/Obsidian/Personal
+    - /Users/bborbe/Documents/workspaces/openbrain/docs
+    - /Users/bborbe/Documents/workspaces/dark-factory/docs
+    - /Users/bborbe/Documents/workspaces/coding/docs
+  starcitzen:
+    - /Users/bborbe/Documents/Obsidian/StarCitizen
