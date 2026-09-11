@@ -1,8 +1,9 @@
 ---
-status: prompted
+status: verifying
 approved: "2026-09-11T11:20:35Z"
 generating: "2026-09-11T11:43:08Z"
 prompted: "2026-09-11T11:43:08Z"
+verifying: "2026-09-11T13:27:12Z"
 branch: dark-factory/per-vault-scoping
 ---
 

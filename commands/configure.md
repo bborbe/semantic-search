@@ -37,12 +37,14 @@ Report findings, then ask (single AskUserQuestion):
 
 > A semantic-search-http service is already running on port 8321 (instances: <list>). What would you like to do?
 > 1. Skip — already configured
-> 2. Add another instance (different port + label)
-> 3. Reconfigure existing instance
+> 2. Add a scope — one server, one index, many views (preferred)
+> 3. Add another instance (different port + label) — costs a second full index
+> 4. Reconfigure existing instance
 
 - **1 (skip)** → STOP with summary
-- **2 (add instance)** → continue with Step 2; in Step 3 ask for instance label + alternative port
-- **3 (reconfigure)** → continue with Step 2, reuse the existing label, propose unloading old plist before writing new
+- **2 (add scope)** → add a name and its ordered root list to `scopes.yaml`, then restart the service. No plist/unit change, no second port, no second index. Clients select it with `?scope=<name>` in their MCP config URL. See [design/per-vault-scoping.md](../docs/design/per-vault-scoping.md)
+- **3 (add instance)** → continue with Step 2; in Step 3 ask for instance label + alternative port
+- **4 (reconfigure)** → continue with Step 2, reuse the existing label, propose unloading old plist before writing new
 
 If no service is running, continue normally with Step 2.
 

@@ -19,14 +19,16 @@
 #   PORT          (required)
 #   CONTENT_PATH  (required, comma-separated paths — becomes scope `scenario`)
 #   LOG_FILE      (default /tmp/scenario-http.log)
-#   READY_TIMEOUT (default 30 seconds)
+#   READY_TIMEOUT (default 180 seconds — a cold run downloads and loads
+#                  all-MiniLM-L6-v2 before /health reports ready, which
+#                  routinely exceeds 30s)
 
 set -euo pipefail
 
 : "${PORT:?PORT env var required}"
 : "${CONTENT_PATH:?CONTENT_PATH env var required}"
 LOG_FILE=${LOG_FILE:-/tmp/scenario-http.log}
-READY_TIMEOUT=${READY_TIMEOUT:-30}
+READY_TIMEOUT=${READY_TIMEOUT:-180}
 
 # Refuse if port already busy — clearer error than a silent bind failure.
 if lsof -i ":$PORT" >/dev/null 2>&1; then

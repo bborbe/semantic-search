@@ -61,11 +61,13 @@ launchctl list 2>/dev/null | awk '/com\.github\.bborbe\.semantic-search-http/ {p
 systemctl --user list-units 'semantic-search-http*' --no-legend 2>/dev/null | awk '{print $1}'
 ```
 
-For each running service, infer its port from the plist/unit file (`--port <N>` argument) and query:
+For each running service, infer its port from the plist/unit file (`--port <N>` argument) and query. Since the per-vault scoping change, `/search` **requires** a `scope` — take it from the service's MCP config URL (`?scope=<name>`). The scope, not the port, is what selects the vault view:
 
 ```bash
-curl -fsS --max-time 10 "http://127.0.0.1:<PORT>/search?q=$(printf %s "<query>" | jq -sRr @uri)&top_k=<top_k>"
+curl -fsS --max-time 10 "http://127.0.0.1:<PORT>/search?q=$(printf %s "<query>" | jq -sRr @uri)&top_k=<top_k>&scope=<SCOPE>"
 ```
+
+An unscoped call returns HTTP 400 `MISSING_SCOPE` rather than the union index — never fall back to querying without one.
 
 Merge results by score (same as step 3), label each with the service instance name (e.g. `personal@8321`, `work@8322`).
 
@@ -106,4 +108,4 @@ Always indicate which servers were queried and which transport was used per serv
 - Semantic search finds related concepts even when terminology differs (e.g., English ↔ German).
 - Scores above ~0.6 typically indicate strong relevance; below ~0.4 may be noise.
 - Both MCP and REST transports hit the same warm indexer per service. MCP is preferred because it surfaces in Claude's tool list; REST is the fallback for unwired or broken-MCP-config states.
-- Adding a new instance label requires extending this command's `allowed-tools` list and the "Known servers" table above.
+- Adding a new instance label requires extending this command's `allowed-tools` list and the "Known servers" table above. Adding a new **scope** does not — scopes live in `scopes.yaml` and one server serves them all.
