@@ -1,7 +1,8 @@
 ---
-spec: ["005-bug-non-reproducible-embeddings"]
-status: draft
+status: approved
+spec: [005-bug-non-reproducible-embeddings]
 created: "2026-09-11T19:50:17Z"
+queued: "2026-09-11T20:09:00Z"
 ---
 
 # Add a cross-process embedding determinism regression test

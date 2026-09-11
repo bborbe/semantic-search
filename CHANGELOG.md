@@ -10,6 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+- fix: assemble the embedding tag block in authored order instead of from a `set`, so an unchanged file produces the same embedding in every process — a document's tags are emitted frontmatter-first then inline, deduplicated with the first occurrence winning, and search rankings no longer drift between restarts and index rebuilds.
 - docs: state the tag-ordering contract in the weighted-embedding design doc — the order of the tag block is a documented requirement rather than an implementation detail, because assembling it from an unordered collection makes the embedding, and therefore the search ranking, differ between processes that read the identical file.
 
 ## v0.20.0

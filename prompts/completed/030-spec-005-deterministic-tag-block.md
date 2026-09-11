@@ -1,7 +1,13 @@
 ---
-spec: ["005-bug-non-reproducible-embeddings"]
-status: draft
+status: completed
+spec: [005-bug-non-reproducible-embeddings]
+summary: Made the embedding tag block deterministic and authored-ordered by replacing the set-based tag union with a first-appearance dedup loop, added exact tag-line tests, and recorded the fix in the changelog
+execution_id: semantic-search-exec-030-spec-005-deterministic-tag-block
+dark-factory-version: dev
 created: "2026-09-11T19:50:17Z"
+queued: "2026-09-11T20:09:00Z"
+started: "2026-09-11T20:09:41Z"
+completed: "2026-09-11T20:12:02Z"
 ---
 
 # Make the embedding tag block deterministic and authored-order
