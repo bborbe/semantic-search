@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [005-bug-non-reproducible-embeddings]
+summary: Added tests/test_embedding_determinism.py, a cross-process regression test that spawns three children under distinct PYTHONHASHSEED values and asserts one identical tagged digest plus authored tag order, proven to fail against the pre-fix implementation before being restored.
+execution_id: semantic-search-exec-031-spec-005-cross-process-determinism-test
+dark-factory-version: dev
 created: "2026-09-11T19:50:17Z"
 queued: "2026-09-11T20:09:00Z"
+started: "2026-09-11T20:12:04Z"
+completed: "2026-09-11T20:15:35Z"
 ---
 
 # Add a cross-process embedding determinism regression test
