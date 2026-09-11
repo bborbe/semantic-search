@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- docs: state the tag-ordering contract in the weighted-embedding design doc — the order of the tag block is a documented requirement rather than an implementation detail, because assembling it from an unordered collection makes the embedding, and therefore the search ranking, differ between processes that read the identical file.
+
 ## v0.20.0
 
 - feat: scope the read paths — `/search`, `/duplicates`, and `/content` now answer only from the requested scope's roots: a scoped search widens its retrieval window rather than returning fewer than `top_k` results when out-of-scope documents crowd the nearest-neighbour window, duplicate detection never returns an out-of-scope candidate, and an out-of-scope `/content` path is refused with the existing `PATH_OUTSIDE_ROOTS` error. Response envelopes are unchanged.
