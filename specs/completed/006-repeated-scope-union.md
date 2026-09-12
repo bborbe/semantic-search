@@ -1,8 +1,10 @@
 ---
-status: prompted
+status: completed
 approved: "2026-09-12T08:43:19Z"
 generating: "2026-09-12T08:57:02Z"
 prompted: "2026-09-12T09:13:59Z"
+verifying: "2026-09-12T09:34:45Z"
+completed: "2026-09-12T10:32:52Z"
 branch: dark-factory/repeated-scope-union
 ---
 
