@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [006-repeated-scope-union]
+summary: Added tests/test_union_scope_sweep.py, a fourteen-query repeated-scope sweep asserting per-scope non-vacuity and zero leakage, with both clauses proven load-bearing
+execution_id: semantic-search-exec-035-spec-006-union-leakage-sweep
+dark-factory-version: v0.193.0
 created: "2026-09-12T09:03:10Z"
 queued: "2026-09-12T09:22:11Z"
+started: "2026-09-12T09:31:54Z"
+completed: "2026-09-12T09:34:44Z"
 branch: dark-factory/repeated-scope-union
 ---
 

@@ -11,6 +11,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 ## Unreleased
 
 - feat: resolve every `?scope=` value a request carries to the union of the named scopes' roots, so a repeated-scope URL (for example `/search?q=alpha&scope=personal&scope=work`) answers from both scopes on `/search`, `/duplicates`, `/content` and the MCP mount alike. A single-scope request returns byte-identical results, a request naming an undeclared scope still fails closed with HTTP 400 `UNKNOWN_SCOPE`, and the offending name is named in a warning log line rather than the frozen response body.
+- test: sweep fourteen queries through a repeated-scope request over a three-root corpus in `tests/test_union_scope_sweep.py`, asserting each query returns at least one path under every named scope and none outside them — including none from a declared third scope the request never names — plus that a repeated scope whose union matches nothing returns an empty result rather than an error.
 
 ## v0.22.1
 
