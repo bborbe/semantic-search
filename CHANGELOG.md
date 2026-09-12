@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## v0.22.1
+
+- docs: record the eager-vs-lazy index-load decision and its measurement in the per-vault-scoping design doc — eager load settles at **1,555 MB** `phys_footprint` (peak **1,787 MB** across a full `/reindex`) against the five-instance **10.3 GB** baseline, so a lazy path would add per-scope loading, a second cache-key story and cold-request latency to save memory that is not scarce.
+
 ## v0.22.0
 
 - feat: default the scope map to `~/.config/semantic-search/config.yaml`, so `semantic-search-http` starts with no `SEMANTIC_SCOPE_MAP` set — a package install now runs without any environment setup, and the launchd service no longer has to point its scope map at a path inside a git working tree. `SEMANTIC_SCOPE_MAP` still wins when set, the startup log names the resolved file and whether it came from the variable or the default, and a map that is missing, unreadable, or malformed still refuses to start with a non-zero exit.
