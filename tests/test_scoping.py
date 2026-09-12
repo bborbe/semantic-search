@@ -9,6 +9,7 @@ earlier test never decides what is indexed.
 """
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -337,3 +338,231 @@ class TestRootsNoneContract:
         assert result["content"] == "hello alpha"
         assert result["mode"] == "full"
         assert result["path"] == str(note.resolve())
+
+
+class TestRepeatedScopeSearchesTheUnion:
+    """A URL naming two scopes returns results drawn from both of them, and the
+    order the scopes are named in does not change the result set."""
+
+    def test_union_contains_paths_under_both_roots(
+        self,
+        two_roots: tuple[Path, Path],
+        deterministic_sentence_transformer: type,
+    ) -> None:
+        root_a, root_b = two_roots
+        # Both scopes hold a document matching the probe query, so a last-wins
+        # collapse to either single scope drops the other root's document.
+        (root_a / "a-alpha.md").write_text("alpha\n" * 10)
+        (root_b / "b-alpha.md").write_text("alpha\n" * 10)
+
+        app = build_app(_scope_map(root_a, root_b))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app) as client,
+        ):
+            _wait_for_ready(client)
+            single_a = client.get("/search?q=alpha&top_k=20&scope=scope_a").json()
+            single_b = client.get("/search?q=alpha&top_k=20&scope=scope_b").json()
+            union = client.get("/search?q=alpha&top_k=20&scope=scope_a&scope=scope_b").json()
+
+        single_a_paths = {r["path"] for r in single_a["results"]}
+        single_b_paths = {r["path"] for r in single_b["results"]}
+        union_paths = {r["path"] for r in union["results"]}
+
+        # Count alone is not evidence: search() returns the moment it holds
+        # top_k in-scope hits, so a union and a last-wins collapse both return
+        # exactly top_k paths. The strict-superset relations and the per-scope
+        # membership are what carry the assertion.
+        assert any(Path(p).resolve().is_relative_to(root_a.resolve()) for p in union_paths)
+        assert any(Path(p).resolve().is_relative_to(root_b.resolve()) for p in union_paths)
+        assert union_paths > single_a_paths
+        assert union_paths > single_b_paths
+
+    def test_union_membership_is_order_independent(
+        self,
+        two_roots: tuple[Path, Path],
+        deterministic_sentence_transformer: type,
+    ) -> None:
+        root_a, root_b = two_roots
+        (root_a / "a-alpha.md").write_text("alpha\n" * 10)
+        (root_b / "b-alpha.md").write_text("alpha\n" * 10)
+
+        app = build_app(_scope_map(root_a, root_b))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app) as client,
+        ):
+            _wait_for_ready(client)
+            ab = client.get("/search?q=alpha&top_k=20&scope=scope_a&scope=scope_b").json()
+            ba = client.get("/search?q=alpha&top_k=20&scope=scope_b&scope=scope_a").json()
+
+        ab_paths = [r["path"] for r in ab["results"]]
+        ba_paths = [r["path"] for r in ba["results"]]
+
+        # The union is a set of roots and membership is order-independent, so
+        # the result order (the index's own nearest-neighbour order restricted
+        # to in-scope documents) cannot depend on the parameter order.
+        assert ab_paths == ba_paths
+        assert set(ab_paths) == set(ba_paths)
+        assert ab_paths
+        assert any(Path(p).resolve().is_relative_to(root_a.resolve()) for p in ab_paths)
+        assert any(Path(p).resolve().is_relative_to(root_b.resolve()) for p in ab_paths)
+
+
+class TestRepeatedScopeFailsClosedOnUnknownName:
+    """Any undeclared name in a repeated scope refuses the whole request, and
+    the offending value is named in the log line, never in the body."""
+
+    def test_unknown_name_in_a_repeated_scope_is_refused(
+        self,
+        two_roots: tuple[Path, Path],
+        deterministic_sentence_transformer: type,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        root_a, root_b = two_roots
+        (root_a / "a-alpha.md").write_text("alpha\n" * 10)
+        (root_b / "b-alpha.md").write_text("alpha\n" * 10)
+
+        app = build_app(_scope_map(root_a, root_b))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app) as client,
+        ):
+            _wait_for_ready(client)
+            with caplog.at_level(logging.WARNING):
+                refused = client.get("/search?q=alpha&top_k=20&scope=scope_a&scope=bogus")
+            # `bogus` here is an unnamed parameter the handler ignores, not a
+            # `scope` value — the boundary the spec calls out.
+            ignored = client.get("/search?q=alpha&scope=scope_a&bogus=1")
+
+        assert refused.status_code == 400
+        body = refused.json()
+        assert body == {"error": "UNKNOWN_SCOPE"}
+        assert "results" not in body
+
+        # Count only the records naming the offending value, so an unrelated
+        # library warning in the capture cannot make this brittle.
+        naming = [r for r in caplog.records if "bogus" in r.getMessage()]
+        assert len(naming) >= 1
+        assert naming[0].levelno == logging.WARNING
+
+        assert ignored.status_code == 200
+
+
+class TestRepeatedScopeRejectedFormsStayRejected:
+    """The bracket form and the comma form are not scope values and stay
+    refused — no parsing code exists for either, and none may be added."""
+
+    def test_bracket_and_comma_forms_stay_refused(
+        self,
+        two_roots: tuple[Path, Path],
+        deterministic_sentence_transformer: type,
+    ) -> None:
+        root_a, root_b = two_roots
+        (root_a / "a-alpha.md").write_text("alpha\n" * 10)
+
+        app = build_app(_scope_map(root_a, root_b))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app) as client,
+        ):
+            bracket = client.get("/search?q=alpha&scope[]=scope_a&scope[]=scope_b")
+            comma = client.get("/search?q=alpha&scope=scope_a,scope_b")
+
+        # `scope[]` is not a `scope` parameter at all, so the request names no
+        # scope; `scope=a,b` is one literal unknown name.
+        assert bracket.status_code == 400
+        assert bracket.json() == {"error": "MISSING_SCOPE"}
+        assert comma.status_code == 400
+        assert comma.json() == {"error": "UNKNOWN_SCOPE"}
+
+
+class TestSingleScopeRequestIsByteIdentical:
+    """A single-scope request against the union app returns byte-identical
+    results — same paths, same order, same scores — to an independently built
+    single-scope index over that scope's own roots.
+
+    The frozen pre-change baseline is a retired oracle and is deliberately not
+    used: the oracle here is a second app, over root_a alone, with the full
+    process-state reset and its own cache directory (the index directory is
+    keyed on the joined resolved roots).
+    """
+
+    def test_single_scope_request_matches_an_independent_single_scope_index(
+        self,
+        two_roots: tuple[Path, Path],
+        deterministic_sentence_transformer: type,
+    ) -> None:
+        import semantic_search.http_server as http_server
+
+        root_a, root_b = two_roots
+        (root_a / "a-alpha.md").write_text("alpha\n" * 10)
+        (root_b / "b-alpha.md").write_text("alpha\n" * 10)
+
+        app = build_app(_scope_map(root_a, root_b))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app) as client,
+        ):
+            _wait_for_ready(client)
+
+            # The union app's own index genuinely differs from the oracle's:
+            # an unscoped search reaches a root_b path, so the two indexes
+            # cannot be identical and the comparison proves something.
+            unscoped = http_server.get_indexer().search("alpha", top_k=20)
+            unscoped_paths = [r["path"] for r in unscoped]
+            assert any(Path(p).resolve().is_relative_to(root_b.resolve()) for p in unscoped_paths)
+
+            response = client.get("/search?q=alpha&top_k=20&scope=scope_a")
+            assert response.status_code == 200
+            union_app = response.json()
+            union_app_pairs = [(r["path"], r["score"]) for r in union_app["results"]]
+
+        assert union_app_pairs
+
+        # Full process-state reset plus a second app over root_a alone, so its
+        # background build indexes root_a only into its own cache directory.
+        factory.reset()
+        http_server._indexer = None
+        http_server._indexer_error = None
+        http_server._indexer_ready = asyncio.Event()
+
+        app_a = build_app(ScopeMap(scopes={"scope_a": (root_a,)}))
+        with (
+            patch(
+                "semantic_search.indexer.SentenceTransformer",
+                deterministic_sentence_transformer,
+            ),
+            TestClient(app_a) as client,
+        ):
+            _wait_for_ready(client)
+            health = client.get("/health").json()
+            a_file_count = len(list(root_a.glob("*.md")))
+            assert a_file_count > 0
+            assert health["paths"] == [str(root_a)]
+            assert health["indexed_files"] == a_file_count
+
+            oracle = client.get("/search?q=alpha&top_k=20&scope=scope_a")
+            assert oracle.status_code == 200
+            oracle_body = oracle.json()
+
+        # Zero tolerance: one extra path, one missing path, a reordering, or a
+        # differing score fails.
+        assert union_app_pairs == [(r["path"], r["score"]) for r in oracle_body["results"]]
+        assert union_app["query"] == oracle_body["query"]
+        assert union_app["count"] == oracle_body["count"]

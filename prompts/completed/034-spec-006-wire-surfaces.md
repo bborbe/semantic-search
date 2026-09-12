@@ -1,8 +1,13 @@
 ---
-status: approved
+status: completed
 spec: [006-repeated-scope-union]
+summary: Wired every REST handler and the MCP middleware to pass all scope values to the shared resolver so a repeated ?scope= searches the union of the named scopes' roots, with the offending value logged on refusal and single-scope results unchanged.
+execution_id: semantic-search-exec-034-spec-006-wire-surfaces
+dark-factory-version: v0.193.0
 created: "2026-09-12T09:03:10Z"
 queued: "2026-09-12T09:22:11Z"
+started: "2026-09-12T09:28:32Z"
+completed: "2026-09-12T09:31:53Z"
 ---
 
 # Resolve every scope value on both surfaces

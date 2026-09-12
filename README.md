@@ -90,7 +90,7 @@ Scopes are declared in `scopes.yaml` — see [design/per-vault-scoping.md](docs/
 | `/health` | GET | Health check with index stats (scopeless) |
 | `/reindex` | GET/POST | Force index rebuild (scopeless) |
 
-`scope` is **required** on `/search`, `/duplicates`, and `/content`. Omitting it returns HTTP 400 `MISSING_SCOPE`; an unknown name returns 400 `UNKNOWN_SCOPE`. There is deliberately no union-wide fallback.
+`scope` is **required** on `/search`, `/duplicates`, and `/content`. Omitting it returns HTTP 400 `MISSING_SCOPE`; an unknown name returns 400 `UNKNOWN_SCOPE`. Repeating the parameter resolves to the **union** of the named scopes' roots — `/search?q=...&scope=personal&scope=work` searches both scopes in one request, and the order the scopes are named in does not change the result set. There is deliberately no union-wide fallback: naming no scope, or any undeclared name, fails the whole request closed.
 
 
 **Example queries:**

@@ -407,3 +407,72 @@ class TestFailClosedWithoutScopeBinding:
                 _request_roots()
         finally:
             reset_http_transport()
+
+
+class TestBothSurfacesResolveTheUnion:
+    """The REST routes and the MCP mount answer a repeated-scope URL the same
+    way, and both answer from both roots."""
+
+    async def test_rest_and_mcp_agree_on_a_repeated_scope(self, mcp_server) -> None:
+        base_url, root_a, root_b = mcp_server
+
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+            rest = await client.get(
+                f"{base_url}/search",
+                params=[
+                    ("q", "alpha"),
+                    ("top_k", "5"),
+                    ("scope", "scope_a"),
+                    ("scope", "scope_b"),
+                ],
+            )
+        assert rest.status_code == 200
+        rest_paths = [r["path"] for r in rest.json()["results"]]
+
+        url = f"{base_url}/mcp?scope=scope_a&scope=scope_b"
+        async with Client(StreamableHttpTransport(url), timeout=10.0) as client:
+            result = await client.call_tool_mcp("search_related", {"query": "alpha", "top_k": 5})
+        mcp_paths = _result_paths(result)
+
+        # Agreement alone is not evidence: making both surfaces take the FIRST
+        # duplicate (or both the LAST) satisfies agreement while still not
+        # unioning. The per-scope membership in both results rules that out.
+        assert set(rest_paths) == set(mcp_paths)
+        for paths in (rest_paths, mcp_paths):
+            assert any(Path(p).resolve().is_relative_to(root_a.resolve()) for p in paths)
+            assert any(Path(p).resolve().is_relative_to(root_b.resolve()) for p in paths)
+
+
+class TestScopeResolvesThroughOneFunction:
+    """Every call site — the three REST handlers and the MCP middleware — goes
+    through the shared resolver, passing the whole list of values."""
+
+    async def test_every_call_site_passes_a_list(self, mcp_server) -> None:
+        base_url, root_a, _ = mcp_server
+        real_resolve = http_server.resolve_scope
+
+        with patch("semantic_search.http_server.resolve_scope", side_effect=real_resolve) as spy:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                search = await client.get(f"{base_url}/search?q=alpha&scope=scope_a")
+                duplicates = await client.get(
+                    f"{base_url}/duplicates?file={root_a / 'a-alpha.md'}&scope=scope_a"
+                )
+                content = await client.get(
+                    f"{base_url}/content?path={root_a / 'a-file.md'}&scope=scope_a"
+                )
+                mcp = await client.post(
+                    f"{base_url}/mcp?scope=scope_a", json=INITIALIZE_BODY, headers=MCP_HEADERS
+                )
+
+        assert search.status_code == 200
+        assert duplicates.status_code == 200
+        assert content.status_code == 200
+        assert mcp.headers.get("mcp-session-id") is not None
+
+        assert spy.call_count == 4
+        # The list assertion is the point: a call site that still passes a bare
+        # string would satisfy the count while defeating the change.
+        for call in spy.call_args_list:
+            assert isinstance(call.args[1], list), (
+                f"resolve_scope called with a non-list: {call.args[1]!r}"
+            )

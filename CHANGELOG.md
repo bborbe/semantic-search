@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: resolve every `?scope=` value a request carries to the union of the named scopes' roots, so a repeated-scope URL (for example `/search?q=alpha&scope=personal&scope=work`) answers from both scopes on `/search`, `/duplicates`, `/content` and the MCP mount alike. A single-scope request returns byte-identical results, a request naming an undeclared scope still fails closed with HTTP 400 `UNKNOWN_SCOPE`, and the offending name is named in a warning log line rather than the frozen response body.
+
 ## v0.22.1
 
 - docs: record the eager-vs-lazy index-load decision and its measurement in the per-vault-scoping design doc — eager load settles at **1,555 MB** `phys_footprint` (peak **1,787 MB** across a full `/reindex`) against the five-instance **10.3 GB** baseline, so a lazy path would add per-scope loading, a second cache-key story and cold-request latency to save memory that is not scarce.
