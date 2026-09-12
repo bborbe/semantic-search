@@ -1,6 +1,7 @@
 ---
-status: draft
-created: 2026-09-12
+status: approved
+approved: "2026-09-12T08:43:19Z"
+branch: dark-factory/repeated-scope-union
 ---
 
 ## Summary
