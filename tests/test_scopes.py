@@ -275,3 +275,107 @@ class TestResolveScope:
         scope_map = ScopeMap(scopes={"one": (tmp_path,)})
         with pytest.raises(UnknownScopeError):
             resolve_scope(scope_map, "does-not-exist")
+
+
+def _multi_map(tmp_path: Path) -> ScopeMap:
+    """A map with two disjoint scopes and a third that shares a root with one."""
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_c = tmp_path / "c"
+    return ScopeMap(scopes={"a": (root_a,), "b": (root_b,), "shared": (root_a, root_c)})
+
+
+class TestResolveScopeUnion:
+    """The multi-value contract: union of every named scope, de-duplicated."""
+
+    def test_union_of_two_disjoint_scopes(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        scope_map = ScopeMap(scopes={"a": (root_a,), "b": (root_b,)})
+        assert resolve_scope(scope_map, ["a", "b"]) == (root_a, root_b)
+
+    def test_union_order_is_first_appearance(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        root_c = tmp_path / "c"
+        scope_map = ScopeMap(scopes={"a": (root_a, root_c), "b": (root_b,)})
+        assert resolve_scope(scope_map, ["a", "b"]) == (root_a, root_c, root_b)
+
+    def test_order_independent_same_root_set(self, tmp_path: Path) -> None:
+        scope_map = _multi_map(tmp_path)
+        assert set(resolve_scope(scope_map, ["a", "b"])) == set(
+            resolve_scope(scope_map, ["b", "a"])
+        )
+
+    def test_order_independent_resolves_both_scopes(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        root_b = tmp_path / "b"
+        scope_map = _multi_map(tmp_path)
+        resolved = resolve_scope(scope_map, ["b", "a"])
+        assert root_a in resolved
+        assert root_b in resolved
+
+    def test_shared_root_appears_once(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        root_c = tmp_path / "c"
+        scope_map = _multi_map(tmp_path)
+        resolved = resolve_scope(scope_map, ["a", "shared"])
+        assert resolved == (root_a, root_c)
+        assert resolved.count(root_a) == 1
+
+    def test_repeated_name_equals_single_name(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        scope_map = ScopeMap(scopes={"a": (root_a,)})
+        assert resolve_scope(scope_map, ["a", "a", "a"]) == resolve_scope(scope_map, ["a"])
+
+    def test_bare_string_is_one_value(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        scope_map = ScopeMap(scopes={"a": (root_a,)})
+        assert resolve_scope(scope_map, "a") == (root_a,)
+
+
+class TestResolveScopeRejections:
+    """Every rejection path: the whole request fails, and the value is named."""
+
+    @pytest.mark.parametrize("bad", ["does-not-exist", "bogus", "a,b"])
+    def test_unknown_name_is_named(self, bad: str, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"a": (tmp_path / "a",)})
+        with pytest.raises(UnknownScopeError) as exc_info:
+            resolve_scope(scope_map, [bad])
+        assert bad in str(exc_info.value)
+
+    def test_prefix_of_declared_name_is_unknown(self, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"personal": (tmp_path / "p",)})
+        with pytest.raises(UnknownScopeError) as exc_info:
+            resolve_scope(scope_map, ["perso"])
+        assert "perso" in str(exc_info.value)
+
+    def test_first_undeclared_value_is_named(self, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"a": (tmp_path / "a",)})
+        with pytest.raises(UnknownScopeError) as exc_info:
+            resolve_scope(scope_map, ["bogus", "worse"])
+        assert "bogus" in str(exc_info.value)
+        assert "worse" not in str(exc_info.value)
+
+    def test_whole_request_rejected_when_any_name_unknown(self, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"a": (tmp_path / "a",), "b": (tmp_path / "b",)})
+        with pytest.raises(UnknownScopeError):
+            resolve_scope(scope_map, ["a", "bogus"])
+
+    def test_comma_value_is_not_split(self, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"a": (tmp_path / "a",), "b": (tmp_path / "b",)})
+        with pytest.raises(UnknownScopeError) as exc_info:
+            resolve_scope(scope_map, ["a,b"])
+        assert "a,b" in str(exc_info.value)
+
+    @pytest.mark.parametrize("raw", [[], None, "", "   ", [""], ["", "   "]])
+    def test_missing_scope(self, raw: object, tmp_path: Path) -> None:
+        scope_map = ScopeMap(scopes={"a": (tmp_path / "a",)})
+        with pytest.raises(MissingScopeError) as exc_info:
+            resolve_scope(scope_map, raw)  # type: ignore[arg-type]
+        assert str(exc_info.value) == "request named no scope"
+
+    def test_blank_value_ignored_alongside_real_name(self, tmp_path: Path) -> None:
+        root_a = tmp_path / "a"
+        scope_map = ScopeMap(scopes={"a": (root_a,)})
+        assert resolve_scope(scope_map, ["", "a"]) == (root_a,)

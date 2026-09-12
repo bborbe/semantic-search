@@ -8,6 +8,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: resolve every `?scope=` value a request carries to the union of the named scopes' roots, so a repeated-scope URL (for example `/search?q=alpha&scope=personal&scope=work`) answers from both scopes on `/search`, `/duplicates`, `/content` and the MCP mount alike. A single-scope request returns byte-identical results, a request naming an undeclared scope still fails closed with HTTP 400 `UNKNOWN_SCOPE`, and the offending name is named in a warning log line rather than the frozen response body.
+- test: sweep fourteen queries through a repeated-scope request over a three-root corpus in `tests/test_union_scope_sweep.py`, asserting each query returns at least one path under every named scope and none outside them — including none from a declared third scope the request never names — plus that a repeated scope whose union matches nothing returns an empty result rather than an error.
+
 ## v0.22.1
 
 - docs: record the eager-vs-lazy index-load decision and its measurement in the per-vault-scoping design doc — eager load settles at **1,555 MB** `phys_footprint` (peak **1,787 MB** across a full `/reindex`) against the five-instance **10.3 GB** baseline, so a lazy path would add per-scope loading, a second cache-key story and cold-request latency to save memory that is not scarce.

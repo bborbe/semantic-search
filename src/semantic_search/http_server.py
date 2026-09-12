@@ -95,7 +95,15 @@ def _not_ready_response() -> JSONResponse:
 
 
 def _scope_error_token(exc: ScopeRequestError) -> str:
-    """Return the HTTP refusal token for a scope resolution failure."""
+    """Log the refusal, then return the HTTP refusal token for it.
+
+    The response body is frozen to `{"error": "<TOKEN>"}` and carries no value,
+    so the offending scope name an `UnknownScopeError` names is observable only
+    through this warning line — not in the body. Every refusal path (the MCP
+    middleware and all three REST handlers) passes through here, so one warning
+    per refusal covers all four call sites.
+    """
+    logger.warning("scope refusal: %s", exc)
     if isinstance(exc, MissingScopeError):
         return MISSING_SCOPE
     if isinstance(exc, UnknownScopeError):
@@ -111,11 +119,13 @@ class _MCPScopeMiddleware:
     scope — Starlette's lifespan travels through the same middleware stack as
     a scope with no `"path"` key, so the type check must come first.
 
-    For an MCP request the `?scope=` query parameter is resolved against the
-    injected scope map *before* the MCP protocol layer runs: a request naming
-    no scope is refused with HTTP 400 (`MISSING_SCOPE`), a request naming an
-    unknown scope is refused with HTTP 400 (`UNKNOWN_SCOPE`), and a valid
-    scope's roots are bound via `set_request_roots` for the downstream app.
+    For an MCP request every `?scope=` value the query string carries is
+    resolved against the injected scope map *before* the MCP protocol layer
+    runs: the values are resolved to the union of the named scopes' roots, a
+    request naming no scope is refused with HTTP 400 (`MISSING_SCOPE`), a
+    request naming an unknown scope is refused with HTTP 400 (`UNKNOWN_SCOPE`),
+    and the union roots are bound via `set_request_roots` for the downstream
+    app.
     The binding is a context variable, so the value a tool body reads is the
     one bound on the request that established its MCP session, and two
     concurrent sessions never observe each other's roots.
@@ -133,11 +143,9 @@ class _MCPScopeMiddleware:
         if path != "/mcp" and not path.startswith("/mcp/"):
             await self.app(scope, receive, send)
             return
-        raw_scope = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("scope", [None])[
-            0
-        ]
+        raw_scopes = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("scope", [])
         try:
-            roots = resolve_scope(self.scope_map, raw_scope)
+            roots = resolve_scope(self.scope_map, raw_scopes)
         except ScopeRequestError as exc:
             response = JSONResponse({"error": _scope_error_token(exc)}, status_code=400)
             await response(scope, receive, send)
@@ -197,12 +205,13 @@ def build_app(scope_map: ScopeMap) -> Starlette:
 
     Args:
         scope_map: The committed scope map. The routes close over it: each
-            request to /search, /duplicates, or /content has its `scope`
-            parameter resolved against it, and a request naming no scope or
-            an unknown scope is refused with HTTP 400 (MISSING_SCOPE /
-            UNKNOWN_SCOPE) before the readiness gate. A valid scope's roots
-            are passed into the indexer call as a per-request argument, so
-            each read path answers only from that scope's roots.
+            request to /search, /duplicates, or /content has every `scope`
+            value it carries resolved against it, to the union of the named
+            scopes' roots, and a request naming no scope or an unknown scope
+            is refused with HTTP 400 (MISSING_SCOPE / UNKNOWN_SCOPE) before
+            the readiness gate. The union roots are passed into the indexer
+            call as a per-request argument, so each read path answers only
+            from the named scopes' roots.
     """
     mark_http_transport()
     mcp_app = mcp.http_app(path="/mcp")
@@ -248,11 +257,12 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             if not q:
                 return JSONResponse({"error": "Missing 'q' parameter"}, status_code=400)
 
-            # scope gate: resolve the scope (refusing a missing or unknown
-            # scope) before the readiness gate, then pass its roots through
-            # to the search as a per-request argument.
+            # scope gate: resolve every scope value the request carries
+            # (refusing a missing or unknown scope) before the readiness gate,
+            # then pass the union roots through to the search as a per-request
+            # argument.
             try:
-                roots = resolve_scope(scope_map, request.query_params.get("scope"))
+                roots = resolve_scope(scope_map, request.query_params.getlist("scope"))
             except ScopeRequestError as e:
                 return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 
@@ -275,11 +285,12 @@ def build_app(scope_map: ScopeMap) -> Starlette:
             if not file_path:
                 return JSONResponse({"error": "Missing 'file' parameter"}, status_code=400)
 
-            # scope gate: resolve the scope (refusing a missing or unknown
-            # scope) before the readiness gate, then pass its roots through
-            # to the duplicate check as a per-request argument.
+            # scope gate: resolve every scope value the request carries
+            # (refusing a missing or unknown scope) before the readiness gate,
+            # then pass the union roots through to the duplicate check as a
+            # per-request argument.
             try:
-                roots = resolve_scope(scope_map, request.query_params.get("scope"))
+                roots = resolve_scope(scope_map, request.query_params.getlist("scope"))
             except ScopeRequestError as e:
                 return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 
@@ -321,9 +332,9 @@ def build_app(scope_map: ScopeMap) -> Starlette:
                 status_code=400,
             )
 
-        # Step 2: scope gate (resolve the scope and pass its roots through)
+        # Step 2: scope gate (resolve every scope value and pass the union roots through)
         try:
-            roots = resolve_scope(scope_map, request.query_params.get("scope"))
+            roots = resolve_scope(scope_map, request.query_params.getlist("scope"))
         except ScopeRequestError as e:
             return JSONResponse({"error": _scope_error_token(e)}, status_code=400)
 

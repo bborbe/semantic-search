@@ -1,6 +1,8 @@
 ---
-status: approved
+status: prompted
 approved: "2026-09-12T08:43:19Z"
+generating: "2026-09-12T08:57:02Z"
+prompted: "2026-09-12T09:13:59Z"
 branch: dark-factory/repeated-scope-union
 ---
 
