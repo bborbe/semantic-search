@@ -184,9 +184,11 @@ per-domain index: five daemons over overlapping content measured 10.3 GB combine
 `phys_footprint` on 2026-09-11, almost all of it duplicated index data. One daemon holds
 one union index; the scope filter narrows it per client.
 
-Scopes are declared in `scopes.yaml` (named by the `SEMANTIC_SCOPE_MAP` env var) and
-selected with `?scope=<name>`. See [design/per-vault-scoping.md](design/per-vault-scoping.md)
-for the contract, the five scope names, and the fail-closed default.
+Scopes are declared in a scope map and selected with `?scope=<name>`. The map is named by
+the `SEMANTIC_SCOPE_MAP` env var when that variable is set; when it is unset or empty, the
+server reads `~/.config/semantic-search/config.yaml`. See
+[design/per-vault-scoping.md](design/per-vault-scoping.md) for the contract, the five scope
+names, and the fail-closed default.
 
 MCP clients differ only by the scope in their URL:
 
@@ -209,14 +211,16 @@ Two clients, two scopes, **one port and one index**.
 
 ### Adding a scope
 
-Add a name and its ordered root list to `scopes.yaml`, then restart the unit — the scope
-map is read at startup. A scope name is a dictionary key, never a filesystem path and
-never a shell fragment.
+Add a name and its ordered root list to the scope map — `scopes.yaml` in the repo when
+`SEMANTIC_SCOPE_MAP` points at it, otherwise `~/.config/semantic-search/config.yaml` — then
+restart the unit: the scope map is read at startup. A scope name is a dictionary key, never
+a filesystem path and never a shell fragment.
 
 ### If you genuinely need a second instance
 
 The label-suffix pattern below still works, and each instance still needs its own unit
-file, `Port`, and `SEMANTIC_SCOPE_MAP`. **Each instance MUST bind a unique port** — TCP
+file, `Port`, and scope map (`SEMANTIC_SCOPE_MAP`, or the default
+`~/.config/semantic-search/config.yaml`). **Each instance MUST bind a unique port** — TCP
 ports cannot be shared, so if two units try to bind 8321 only one wins and the other
 restarts in a loop. But a second instance means a second full index, which is exactly
 the cost the scope design exists to avoid: prefer a scope.

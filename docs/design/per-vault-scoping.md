@@ -55,7 +55,8 @@ curl -s "http://127.0.0.1:8321/search?q=dark-factory%20spec&top_k=3"
 
 ## The scope map artifact
 
-`scopes.yaml`, named by the `SEMANTIC_SCOPE_MAP` environment variable:
+`scopes.yaml`, named by the `SEMANTIC_SCOPE_MAP` environment variable when it is set, and
+otherwise read from the user config default `~/.config/semantic-search/config.yaml`:
 
 ```yaml
 scopes:

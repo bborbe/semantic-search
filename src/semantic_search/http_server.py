@@ -26,6 +26,7 @@ from .scopes import (
     MissingScopeError,
     ScopeConfigError,
     ScopeMap,
+    ScopeMapResolution,
     ScopeRequestError,
     UnknownScopeError,
     load_scope_map,
@@ -406,14 +407,31 @@ def build_app(scope_map: ScopeMap) -> Starlette:
     )
 
 
+def resolve_startup_scope_map() -> ScopeMapResolution:
+    """Resolve the scope map path and log which file and source will be used.
+
+    The path comes from SEMANTIC_SCOPE_MAP when that variable holds a
+    non-empty value, and otherwise from the user config default; the log line
+    names both the resolved file and which of the two rules chose it, so an
+    operator can tell at runtime which map is actually being read.
+    """
+    resolution = scope_map_path_from_env()
+    logger.info(f"Scope map: {resolution.path} (source: {resolution.source})")
+    return resolution
+
+
 def main() -> None:
     """Entry point for semantic-search-http binary.
 
-    The composition root: reads and validates the scope map named by
-    SEMANTIC_SCOPE_MAP, declares the union root set, then builds the app.
-    A missing or unusable scope map logs an ERROR (naming the scope and the
-    root) and exits non-zero before any port is bound. `--version` exits 0
-    without touching the scope map.
+    The composition root: resolves and validates the scope map, declares the
+    union root set, then builds the app. The map is named by
+    SEMANTIC_SCOPE_MAP when that variable is set; when it is unset or empty the
+    map is read from `~/.config/semantic-search/config.yaml`, so a package
+    install runs with no environment setup. A map that is missing, unreadable,
+    malformed, or names an unusable root logs an ERROR (naming the scope and
+    the root, or the path tried) and exits non-zero before any port is bound —
+    the default relaxes where the map comes from, never whether it must load.
+    `--version` exits 0 without touching the scope map.
     """
     import uvicorn
 
@@ -436,7 +454,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        scope_map_path = scope_map_path_from_env()
+        scope_map_path = resolve_startup_scope_map().path
         scope_map = load_scope_map(scope_map_path)
         validate_scope_map(scope_map)
     except ScopeConfigError as e:

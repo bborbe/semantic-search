@@ -1,9 +1,11 @@
 """Tests for the scope map loader, validator, and resolver."""
 
+import logging
 from pathlib import Path
 
 import pytest
 
+from semantic_search.http_server import resolve_startup_scope_map
 from semantic_search.scopes import (
     MissingScopeError,
     ScopeConfigError,
@@ -21,6 +23,17 @@ def _write_map(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "scopes.yaml"
     path.write_text(content)
     return path
+
+
+def _default_map_path(home: Path) -> Path:
+    """Return the default scope map path under a redirected HOME."""
+    return home / ".config" / "semantic-search" / "config.yaml"
+
+
+def _redirect_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    """Point the default scope map resolution at `home` by redirecting $HOME."""
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("SEMANTIC_SCOPE_MAP", raising=False)
 
 
 def test_load_valid_map_and_union_dedup(tmp_path: Path) -> None:
@@ -45,19 +58,108 @@ def test_load_valid_map_and_union_dedup(tmp_path: Path) -> None:
 
 class TestScopeMapPathFromEnv:
     def test_returns_env_var_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A set variable wins: its value is the path and the source is `env`."""
         map_path = tmp_path / "scopes.yaml"
         monkeypatch.setenv("SEMANTIC_SCOPE_MAP", str(map_path))
-        assert scope_map_path_from_env() == map_path
+        resolution = scope_map_path_from_env()
+        assert resolution.path == map_path
+        assert resolution.source == "env"
 
-    def test_raises_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("SEMANTIC_SCOPE_MAP", raising=False)
-        with pytest.raises(ScopeConfigError):
-            scope_map_path_from_env()
+    def test_defaults_when_unset(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """An unset variable resolves to the user config path under $HOME."""
+        _redirect_home(monkeypatch, tmp_path)
+        resolution = scope_map_path_from_env()
+        assert resolution.path == _default_map_path(tmp_path)
+        assert resolution.source == "default"
 
-    def test_raises_when_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_defaults_when_empty(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """An empty variable is the same branch as unset: it falls to the default."""
+        monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("SEMANTIC_SCOPE_MAP", "")
-        with pytest.raises(ScopeConfigError):
-            scope_map_path_from_env()
+        resolution = scope_map_path_from_env()
+        assert resolution.path == _default_map_path(tmp_path)
+        assert resolution.source == "default"
+
+
+class TestDefaultScopeMapFailureModes:
+    """The default relaxes where the map comes from, never whether it must load.
+
+    With $HOME redirected, the default points into tmp_path; each bad shape
+    must still refuse to start, and the message must name the path tried so an
+    operator can tell which of the two candidate files was read.
+    """
+
+    def test_absent_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _redirect_home(monkeypatch, tmp_path)
+        default = _default_map_path(tmp_path)
+        with pytest.raises(ScopeConfigError) as exc_info:
+            load_scope_map(scope_map_path_from_env().path)
+        assert str(default) in str(exc_info.value)
+
+    def test_unreadable_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _redirect_home(monkeypatch, tmp_path)
+        default = _default_map_path(tmp_path)
+        default.parent.mkdir(parents=True)
+        default.write_text("scopes:\n  one:\n    - /tmp\n")
+        default.chmod(0)
+        try:
+            with pytest.raises(ScopeConfigError) as exc_info:
+                load_scope_map(scope_map_path_from_env().path)
+            assert str(default) in str(exc_info.value)
+        finally:
+            default.chmod(0o644)
+
+    def test_invalid_yaml(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _redirect_home(monkeypatch, tmp_path)
+        default = _default_map_path(tmp_path)
+        default.parent.mkdir(parents=True)
+        default.write_text("scopes: [unclosed\n")
+        with pytest.raises(ScopeConfigError) as exc_info:
+            load_scope_map(scope_map_path_from_env().path)
+        assert str(default) in str(exc_info.value)
+
+    def test_no_scopes_key(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _redirect_home(monkeypatch, tmp_path)
+        default = _default_map_path(tmp_path)
+        default.parent.mkdir(parents=True)
+        default.write_text("other: 1\n")
+        with pytest.raises(ScopeConfigError) as exc_info:
+            load_scope_map(scope_map_path_from_env().path)
+        assert str(default) in str(exc_info.value)
+
+
+class TestStartupScopeMapLog:
+    """The startup log names the resolved file AND which rule chose it.
+
+    Both directions are asserted: a hardcoded source label, or a hardcoded
+    path, fails one of the two cases.
+    """
+
+    def test_logs_default_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Path,
+    ) -> None:
+        _redirect_home(monkeypatch, tmp_path)
+        default = _default_map_path(tmp_path)
+        with caplog.at_level(logging.INFO):
+            resolution = resolve_startup_scope_map()
+        assert resolution.path == default
+        assert f"Scope map: {default} (source: default)" in caplog.text
+
+    def test_logs_env_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Path,
+    ) -> None:
+        map_path = tmp_path / "scopes.yaml"
+        monkeypatch.setenv("SEMANTIC_SCOPE_MAP", str(map_path))
+        with caplog.at_level(logging.INFO):
+            resolution = resolve_startup_scope_map()
+        assert resolution.path == map_path
+        assert f"Scope map: {map_path} (source: env)" in caplog.text
 
 
 class TestLoadScopeMap:

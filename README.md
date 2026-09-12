@@ -64,6 +64,8 @@ Single long-running process serves MCP-over-HTTP at `/mcp` plus REST at `/search
 SEMANTIC_SCOPE_MAP=scopes.yaml semantic-search-http --host 127.0.0.1 --port 8321
 ```
 
+The variable may be omitted, in which case the scope map is read from `~/.config/semantic-search/config.yaml`.
+
 Scopes are declared in `scopes.yaml` — see [design/per-vault-scoping.md](docs/design/per-vault-scoping.md) for the contract and the fail-closed default. Point Claude Code at it via MCP config; clients differ only by the scope in their URL:
 
 ```json
