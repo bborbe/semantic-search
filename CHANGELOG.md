@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.22.1
 
 - docs: record the eager-vs-lazy index-load decision and its measurement in the per-vault-scoping design doc — eager load settles at **1,555 MB** `phys_footprint` (peak **1,787 MB** across a full `/reindex`) against the five-instance **10.3 GB** baseline, so a lazy path would add per-scope loading, a second cache-key story and cold-request latency to save memory that is not scarce.
 
