@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- docs: state that the scope change is breaking as of v0.20.0 and add the single-`CONTENT_PATH` migration recipe — the server refuses to start without `SEMANTIC_SCOPE_MAP` and every REST and MCP request now needs `?scope=`, but the v0.20.0 entry is tagged `feat:` and carries no breaking marker, so a reader upgrading had no documented path back to a working setup.
+
 ## v0.20.1
 
 - fix: assemble the embedding tag block in authored order instead of from a `set`, so an unchanged file produces the same embedding in every process — a document's tags are emitted frontmatter-first then inline, deduplicated with the first occurrence winning, and search rankings no longer drift between restarts and index rebuilds.
