@@ -175,16 +175,60 @@ shared module free of scope state.
 
 ## The acceptance oracle
 
-The migration is proved against a frozen fixture captured **before** any code change:
+The migration is proved by a **two-axis equivalence test**, run against the deployed
+artifact and diffed against independently built indexes. The frozen fixture captured
+before the code change is **not** the oracle — see § Why the frozen fixture was retired.
+It is still the **query set**: its 14 queries, spanning all five scopes, are what the test
+replays, and `top_k` still comes from it.
 
-`~/Documents/Obsidian/Personal/80 Attachments/semantic-search-consolidation-baseline-2026-09-11.json`
+### The two axes
 
-Schema: `captured_at`, `purpose`, `top_k`, `ports` (keyed `8321`–`8325`, each with
-`label` and `health`), `queries` (14), and `search` — a map of query → port → block,
-where each block is `{query, results, count}` and each result is `{path, score}`.
+Every scope is diffed against two independently built indexes, each its own process with
+its own cache, each launched from the deployed binary:
 
-Replaying it per scope must produce a **zero diff**: same path set, same ordering. One
-extra path, one missing path, or a reordering fails. Every query returns 20 results
-(the `top_k` cap), so the signal is path set and ordering, not count. The fixture is
-read-only — the replay tool never rewrites its oracle — and it cannot be regenerated
-after the merge, because the five-port baseline it compares against ceases to exist.
+| Axis | Oracle | Must match | What it proves |
+|---|---|---|---|
+| 1 | A dedicated server over the **full scope map** | **paths *and* scores**, byte-for-byte | The deployed server is deterministic and its filter faithful — the same corpus reproduces the same answer exactly |
+| 2 | A dedicated index over **that scope's own roots** | **paths and ordering** | The client-visible view is unchanged — same documents, same order |
+
+Zero tolerance on both: one extra path, one missing path, or a reordering fails either
+axis. Axis 1 additionally fails on any score difference at all.
+
+### Why axis 2 does not assert score equality
+
+It cannot, by construction. The process index is built over the **union of all declared
+scope roots** (`src/semantic_search/factory.py` `declare_index_roots`), so a map declaring
+one 9-root scope indexes 17,391 files where the real five-scope map indexes 19,727 — and
+the same document, embedded into an index of a different size, returns **1–2 float32
+ULPs** apart. The values are exactly ½, 1 and 2 ULPs (`2.98e-08`, `5.96e-08`, `1.19e-07`),
+i.e. one rounding step, not a semantic change. That is a property of corpus size, not a
+defect: a separate process over the same root set reproduces the deployed server
+byte-for-byte. Axis 1 asserts byte-identity because that is where it is both achievable
+and meaningful.
+
+Measured 2026-09-12 against the deployed `v0.23.0`, five scopes × 14 queries:
+**axis 1 — 70/70 byte-identical on paths and scores** (`max|d| = 0.000e+00`);
+**axis 2 — 70/70 identical on paths and ordering, 0 path diffs**, score residual
+≤ `1.192e-07`.
+
+### Why the frozen fixture was retired
+
+The fixture recorded the five originals' answers before the change, and replaying it per
+scope was the original acceptance test. It is unusable as an oracle for two independent
+reasons:
+
+- **It was never stable.** The five originals ran with `PYTHONHASHSEED`-randomised tag
+  ordering, so each process's answer was arbitrary and the fixture recorded one sample of
+  it. The five originals now reproduce only **57/70** of their own recording.
+- **The corpus moved under it.** A live `VaultWatcher` (`indexer.py`) keeps indexing, so
+  the expected paths drift as files are added. The fixture is read-only and cannot be
+  regenerated — the five-port baseline it was captured against no longer exists.
+
+Its schema, kept for reference: `captured_at`, `purpose`, `top_k`, `ports` (keyed
+`8321`–`8325`, each with `label` and `health`), `queries` (14), and `search` — a map of
+query → port → block, where each block is `{query, results, count}` and each result is
+`{path, score}`. Only `queries` and `top_k` are still consumed.
+
+`scripts/replay-scope-fixture.py` is likewise not the acceptance tool: it compares **paths
+only** (`fetch_paths` and `expected_paths` both extract `entry["path"]`), so it is
+structurally incapable of observing a score change.

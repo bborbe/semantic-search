@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- docs: re-anchor the acceptance oracle in `docs/design/per-vault-scoping.md` to the two-axis equivalence test that actually shipped — a dedicated server over the full scope map must reproduce the deployed server byte-for-byte on paths **and** scores, and a dedicated index over the scope's own roots must match on paths and ordering. Records why the frozen fixture is no longer the oracle (it was never stable — the five originals reproduce only 57/70 of their own recording — and a live `VaultWatcher` moves the corpus under it), why score equality cannot be asserted against a single-scope index (the process index is built over the union of all declared scope roots, so the same document embedded into an index of a different size returns 1–2 float32 ULPs apart), and the measured result: 70/70 byte-identical on axis 1, 70/70 identical on paths and ordering on axis 2.
+
 ## v0.23.0
 
 - feat: resolve every `?scope=` value a request carries to the union of the named scopes' roots, so a repeated-scope URL (for example `/search?q=alpha&scope=personal&scope=work`) answers from both scopes on `/search`, `/duplicates`, `/content` and the MCP mount alike. A single-scope request returns byte-identical results, a request naming an undeclared scope still fails closed with HTTP 400 `UNKNOWN_SCOPE`, and the offending name is named in a warning log line rather than the frozen response body.
