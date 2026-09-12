@@ -8,7 +8,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
-## Unreleased
+## v0.21.0
 
 - docs: state that the scope change is breaking as of v0.20.0 and add the single-`CONTENT_PATH` migration recipe — the server refuses to start without `SEMANTIC_SCOPE_MAP` and every REST and MCP request now needs `?scope=`, but the v0.20.0 entry is tagged `feat:` and carries no breaking marker, so a reader upgrading had no documented path back to a working setup.
 
