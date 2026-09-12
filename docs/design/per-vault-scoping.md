@@ -99,6 +99,39 @@ background build would decide what gets indexed. `main()` declares
 **not** declare, because every HTTP test calls it and the declaration is process-global
 state that outlives the test that set it.
 
+## Index load is eager — measured, not assumed
+
+The union index is built **eagerly** at startup: `main()` declares the scope map's
+`union_roots` and the indexer loads or rebuilds the whole set before the app serves a
+request. A lazy alternative — loading a scope's roots on first request — was considered
+and **rejected on measurement** rather than on principle.
+
+Measured on the deployed launchd service (`v0.22.0`, 15 roots / ~19,600 files, macOS
+arm64), across a full `/reindex`:
+
+| Reading | `phys_footprint` | RSS |
+|---|---|---|
+| Settled, after the reindex | **1,555 MB** | 243 MB |
+| Peak, during the reindex | **1,787 MB** | 333 MB |
+
+The five instances this replaces measured **10.3 GB** combined. Eager load therefore
+lands at roughly a seventh of that, and far below the 4 GB ceiling the consolidation
+set for itself. Lazy loading would add a per-scope load path, a second cache-key story
+and a cold-request latency spike, to save memory that is not scarce.
+
+Two properties make eager the right shape here specifically:
+
+- **The scope filter is a read-path concern, not a load-path one.** One index over
+  `union_roots`, narrowed per request, is what makes a scope a *view* rather than a
+  separate corpus. A per-scope load would reintroduce exactly the duplicated-index
+  cost the consolidation removed.
+- **`/reindex` is union-wide and scopeless by design** — it rebuilds the whole index,
+  so there is no partial-load state for a lazy path to keep consistent.
+
+This is a single-host observation, not a benchmark. It is recorded because the decision
+is otherwise re-litigable from first principles, and the answer here is "measured, and
+the margin is large" — which is a different claim from "lazy would be wrong".
+
 ## Scope is injected, never parked
 
 The scope reaches the read paths as a value passed in — never stored on the shared
