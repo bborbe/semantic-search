@@ -710,3 +710,39 @@ class TestVersionFlag:
         assert exc_info.value.code != 0
         assert "probe" in caplog.text
         assert "missing-root" in caplog.text
+
+
+class TestMainDefaultScopeMap:
+    """A tool installed without any environment setup can now run.
+
+    With SEMANTIC_SCOPE_MAP deleted and a valid map at the default user config
+    path under a redirected $HOME, main() must reach app construction instead
+    of exiting. `uvicorn.run` is patched so no port is bound.
+    """
+
+    def test_main_starts_from_default_scope_map(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Path,
+    ) -> None:
+        import logging
+
+        root = tmp_path / "root"
+        root.mkdir()
+        config = tmp_path / ".config" / "semantic-search" / "config.yaml"
+        config.parent.mkdir(parents=True)
+        config.write_text(f"scopes:\n  personal:\n    - {root}\n")
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("SEMANTIC_SCOPE_MAP", raising=False)
+        monkeypatch.setattr(sys, "argv", ["semantic-search-http", "--port", "18999"])
+
+        with (
+            caplog.at_level(logging.INFO),
+            patch("uvicorn.run") as mock_run,
+        ):
+            main()
+
+        mock_run.assert_called_once()
+        assert f"Scope map: {config} (source: default)" in caplog.text

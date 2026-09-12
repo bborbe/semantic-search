@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- feat: default the scope map to `~/.config/semantic-search/config.yaml`, so `semantic-search-http` starts with no `SEMANTIC_SCOPE_MAP` set — a package install now runs without any environment setup, and the launchd service no longer has to point its scope map at a path inside a git working tree. `SEMANTIC_SCOPE_MAP` still wins when set, the startup log names the resolved file and whether it came from the variable or the default, and a map that is missing, unreadable, or malformed still refuses to start with a non-zero exit.
+
 ## v0.21.0
 
 - docs: state that the scope change is breaking as of v0.20.0 and add the single-`CONTENT_PATH` migration recipe — the server refuses to start without `SEMANTIC_SCOPE_MAP` and every REST and MCP request now needs `?scope=`, but the v0.20.0 entry is tagged `feat:` and carries no breaking marker, so a reader upgrading had no documented path back to a working setup.

@@ -18,10 +18,18 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
 SCOPE_MAP_ENV = "SEMANTIC_SCOPE_MAP"
+
+# Where the scope map is read from when SCOPE_MAP_ENV is unset or empty. Built
+# from Path.home() at resolution time so it follows $HOME, and deliberately not
+# platformdirs.user_config_dir: on macOS that resolves to
+# ~/Library/Application Support/, not the ~/.config/<tool>/ convention the
+# sibling tools on this machine use.
+DEFAULT_SCOPE_MAP_RELPATH = (".config", "semantic-search", "config.yaml")
 
 # The resolved roots bound for the MCP session currently being served, or
 # None when nothing is bound (the stdio transport). Bound by the HTTP layer's
@@ -69,15 +77,31 @@ class ScopeMap:
         return tuple(union)
 
 
-def scope_map_path_from_env() -> Path:
-    """Return the map file named by SCOPE_MAP_ENV; raise ScopeConfigError when unset or empty."""
+class ScopeMapResolution(NamedTuple):
+    """Where the scope map was resolved from: the path, and which rule chose it."""
+
+    path: Path
+    source: str  # "env" when SCOPE_MAP_ENV named it, "default" otherwise
+
+
+def scope_map_path_from_env() -> ScopeMapResolution:
+    """Resolve the scope map path and report which rule chose it.
+
+    Precedence: a non-empty `SCOPE_MAP_ENV` wins and its value is the path
+    (`source == "env"`). When the variable is unset *or* empty, the path falls
+    back to `~/.config/semantic-search/config.yaml` under `Path.home()`
+    (`source == "default"`).
+
+    This function never raises: a missing, unreadable, or malformed map is
+    still a startup failure, but it is raised by `load_scope_map` and
+    `validate_scope_map`, which name the path they tried.
+    """
     raw = os.environ.get(SCOPE_MAP_ENV)
-    if not raw:
-        raise ScopeConfigError(
-            f"{SCOPE_MAP_ENV} environment variable is not set; "
-            "refusing to start without a scope map"
-        )
-    return Path(raw)
+    if raw:
+        return ScopeMapResolution(path=Path(raw), source="env")
+    return ScopeMapResolution(
+        path=Path.home().joinpath(*DEFAULT_SCOPE_MAP_RELPATH), source="default"
+    )
 
 
 def load_scope_map(path: Path) -> ScopeMap:

@@ -242,7 +242,7 @@ The plugin's install is automatic via the marketplace once the bumped JSONs reac
 
 ## Backwards compatibility
 
-- **Scopes are a breaking change as of v0.20.0** — upgrading requires action, not just a version bump. Two hard requirements arrived together: the server **refuses to start** unless `SEMANTIC_SCOPE_MAP` names a readable scope map, and `?scope=<name>` is required on `/search`, `/duplicates`, and `/content` (REST) and on the MCP config URL. Omitting it, or naming an unknown scope, returns HTTP 400 with `MISSING_SCOPE` / `UNKNOWN_SCOPE`; there is deliberately no union-wide fallback. Note that the v0.20.0 CHANGELOG entry describes this behaviour but is tagged `feat:` and carries no breaking marker, so a reader scanning the release notes for one will not find it. See [design/per-vault-scoping.md](design/per-vault-scoping.md).
+- **Scopes are a breaking change as of v0.20.0** — upgrading requires action, not just a version bump. Two hard requirements arrived together: the server **refuses to start** unless it can read a scope map, and `?scope=<name>` is required on `/search`, `/duplicates`, and `/content` (REST) and on the MCP config URL. As of v0.20.0 the first requirement meant `SEMANTIC_SCOPE_MAP` had to name that map; the variable is now an override — when it is unset or empty, the map is read from `~/.config/semantic-search/config.yaml` — but a map that is missing, unreadable, or malformed still refuses to start. Omitting `?scope=`, or naming an unknown scope, returns HTTP 400 with `MISSING_SCOPE` / `UNKNOWN_SCOPE`; there is deliberately no union-wide fallback. Note that the v0.20.0 CHANGELOG entry describes this behaviour but is tagged `feat:` and carries no breaking marker, so a reader scanning the release notes for one will not find it. See [design/per-vault-scoping.md](design/per-vault-scoping.md).
 
 ### Migrating from a single `CONTENT_PATH`
 
@@ -257,13 +257,13 @@ If you ran one instance over one path set, the migration is three edits — a "s
        - /another/path/if/you/had/more
    ```
 
-2. Point the service at it — set `SEMANTIC_SCOPE_MAP=/path/to/scopes.yaml` in the plist or unit's environment. Without it the process exits with `refusing to start without a scope map`, which under `KeepAlive`/`Restart=always` is a crash-loop rather than a visible failure.
+2. Point the service at it — set `SEMANTIC_SCOPE_MAP=/path/to/scopes.yaml` in the plist or unit's environment, or place the map at the default `~/.config/semantic-search/config.yaml` and omit the variable entirely. Either way a map the server cannot read exits non-zero with a log line naming the path it tried, which under `KeepAlive`/`Restart=always` is a crash-loop rather than a visible failure.
 
 3. Add `?scope=default` to every client URL, e.g. `http://127.0.0.1:8321/mcp?scope=default`.
 
 `CONTENT_PATH` remains valid and is still read, but once the HTTP entry point declares roots from the scope map, **`CONTENT_PATH` no longer decides what is indexed** — the map does. The scope name is a dictionary key: never a filesystem path, never a shell fragment.
 
-There is no compat shim and none is planned: defaulting a missing scope to "everything", or to the only scope when there is one, would defeat the fail-closed guarantee that a client which forgot the parameter cannot silently see every vault.
+There is no compat shim and none is planned **for a request that names no scope**: defaulting a missing `?scope=` to "everything", or to the only scope when there is one, would defeat the fail-closed guarantee that a client which forgot the parameter cannot silently see every vault. The startup default is a different mechanism and does not weaken it — it selects *which scope map to read*, never *which scope to serve*.
 - **MCP server names** — slash commands (`search.md`, `research.md`) hard-list `mcp__semantic-search__`, `mcp__semantic-search-personal__`, `mcp__semantic-search-work__` in `allowed-tools`. Custom labels reach via REST fallback only. Adding a fourth conventional label requires editing `allowed-tools` AND the "Known servers" tables in both commands.
 - **Port discovery** — REST fallback enumerates running `semantic-search-http` services via launchd/systemd. Don't break the `com.github.bborbe.semantic-search-http[-<label>]` plist label convention without updating `commands/search.md` and `commands/research.md`. Note that the consolidation retires four of the five conventional labels: afterwards one `semantic-search-http` service serves every scope, so a fallback that enumerates *instances* finds one and must select a **scope**, not a port.
 - **`/configure`** — the source of truth for plist/unit naming and MCP config layout. Keep `search.md` and `research.md` in sync with whatever `configure.md` produces.
