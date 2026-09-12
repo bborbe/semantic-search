@@ -15,7 +15,7 @@ body observes is the one bound on the request that established its session.
 
 import contextvars
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -160,19 +160,51 @@ def validate_scope_map(scope_map: ScopeMap) -> None:
                 raise ScopeConfigError(f"scope {name!r} root {root} is not readable")
 
 
-def resolve_scope(scope_map: ScopeMap, raw: str | None) -> tuple[Path, ...]:
-    """Return the roots for a request's scope name, or raise.
+def resolve_scope(scope_map: ScopeMap, raw_values: Sequence[str] | str | None) -> tuple[Path, ...]:
+    """Return the roots for every scope name a request carried, or raise.
+
+    `raw_values` is the primary contract: every scope value the request carried,
+    in request order. A bare string is one value and `None` is no value; both
+    legacy forms are retained so single-scope callers keep working unchanged.
+
+    Blank values are ignored, so a request whose only scope values are blank is
+    the same as one that named none. Values are never split or interpreted: a
+    value containing a comma is one literal scope name. Every non-blank value is
+    looked up in request order, and the result is the deduplicated union of the
+    named scopes' roots in first-appearance order — the rule
+    `ScopeMap.union_roots` documents. Naming the same scope more than once is
+    de-duplication, not an error.
 
     Raises:
-        MissingScopeError: When no scope name was given (None or blank).
-        UnknownScopeError: When the scope name is not a declared scope.
+        MissingScopeError: When no non-blank scope value was given.
+        UnknownScopeError: When a value is not a declared scope. The whole
+            request is rejected; the roots of the declared values are never
+            returned.
     """
-    if raw is None or raw.strip() == "":
+    if raw_values is None:
+        values: Sequence[str] = ()
+    elif isinstance(raw_values, str):
+        values = (raw_values,)
+    else:
+        values = raw_values
+
+    seen: set[Path] = set()
+    union: list[Path] = []
+    found = False
+    for value in values:
+        if value.strip() == "":
+            continue
+        found = True
+        roots = scope_map.scopes.get(value)
+        if roots is None:
+            raise UnknownScopeError(f"unknown scope {value!r}")
+        for root in roots:
+            if root not in seen:
+                seen.add(root)
+                union.append(root)
+    if not found:
         raise MissingScopeError("request named no scope")
-    roots = scope_map.scopes.get(raw)
-    if roots is None:
-        raise UnknownScopeError(f"unknown scope {raw!r}")
-    return roots
+    return tuple(union)
 
 
 def set_request_roots(roots: tuple[Path, ...]) -> contextvars.Token[tuple[Path, ...] | None]:
