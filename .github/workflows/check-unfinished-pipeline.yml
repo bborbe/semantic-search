@@ -1,0 +1,132 @@
+name: check-unfinished-pipeline
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+# Sibling to check-do-not-merge.yml. Job name `unfinished-pipeline` IS the
+# required status-check context wired into the repo's master-protection ruleset.
+#
+# Shells out to `dark-factory doctor` rather than reimplementing the state read
+# in bash. Two reasons, both load-bearing:
+#   1. Spec staleness reads the `verifying` frontmatter timestamp, not file
+#      mtime (pkg/doctor/verifying_stale.go). actions/checkout rewrites every
+#      mtime in the tree, so an mtime-based reimplementation would silently
+#      reset each spec's clock on every run and never report a parked spec.
+#   2. The daemon-refusal gate consumes the same detector set, so the two
+#      mechanisms cannot drift apart by construction.
+
+jobs:
+  unfinished-pipeline:
+    runs-on: ubuntu-latest
+    env:
+      # Bump in lockstep with the detector set this check depends on.
+      # v0.196.0 (published 2026-09-15T19:23:30Z) is the first release carrying
+      # `missing-completed-prompt`. Verified against the DOWNLOADED PUBLISHED
+      # ARTIFACT, not a local build: df-pipeline-gate-fixtures.sh --release
+      # v0.196.0 → 6/6. A tag is not enough — pin only versions with assets.
+      DARK_FACTORY_VERSION: v0.196.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip repos with no pipeline tree
+        id: guard
+        run: |
+          if [ ! -d prompts ] && [ ! -d specs ]; then
+            echo "no prompts/ or specs/ tree — nothing to gate"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dark-factory
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          base="https://github.com/bborbe/dark-factory/releases/download/${DARK_FACTORY_VERSION}"
+          # Keep the released filename: checksums.txt names it, and `sha256sum -c`
+          # resolves that name on disk. Saving to df.tar.gz fails the check.
+          curl -fsSL "$base/dark-factory_linux_amd64.tar.gz" -O
+          curl -fsSL "$base/checksums.txt" -O
+          grep 'dark-factory_linux_amd64.tar.gz' checksums.txt | sha256sum -c -
+          tar xzf dark-factory_linux_amd64.tar.gz dark-factory
+          ./dark-factory --version || true
+
+      - name: Check for unresolved pipeline state
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          # Only these doctor categories block a merge. Decided 2026-09-15.
+          #   missing-completed-prompt — a gap permanently blocks every spec-less
+          #     prompt; never self-resolves. The motivating case.
+          #   parse-errors            — an unreadable file is unresolvable by definition.
+          #   orphan-prompt-link      — prompt references a spec that does not exist.
+          # Deliberately NOT blocking:
+          #   prompted-but-not-swept  — fires when a spec is `prompted` and every
+          #     linked prompt is terminal, i.e. the NORMAL state between the factory
+          #     finishing a spec's prompts and sweeping it forward. Blocking it stops
+          #     routine merges, and worse, stops the factory's own PRs — a PR that
+          #     completes a spec's last prompt introduces this state as its correct
+          #     output. (pkg/doctor/prompted_not_swept.go)
+          #   status-dir-mismatch     — bookkeeping drift; the vault-cli 186/187 case
+          #     proved drift does not imply unfinished work.
+          #   duplicate-spec-numbers  — a collision, but execution is unaffected.
+          #   verifying-stale         — parked-spec backlog. Report-only by operator
+          #     decision: it is an owner-disposition problem, and blocking on it aims
+          #     the gate at whoever opens the next PR over a choice that is not theirs.
+          BLOCKING_CATEGORIES: 'missing-completed-prompt|parse-errors|orphan-prompt-link'
+        run: |
+          set +e
+          out="$(./dark-factory doctor 2>&1)"
+          rc=$?
+          set -e
+          echo "$out"
+
+          if [ "$rc" -eq 0 ]; then
+            echo "pipeline clean — merge allowed"
+            exit 0
+          fi
+
+          # An uninitialized pipeline is NOT a broken check. doctor hard-errors
+          # with this message when specs/in-progress is absent — which is a
+          # legitimate repo shape: bborbe/dark-factory-sandbox carries a full
+          # prompts/ tree and no specs/ tree at all. The step-level `-d prompts`
+          # guard above does not catch it (prompts/ exists), so without this the
+          # gate reports a red check on a healthy repo. Found 2026-09-15 by
+          # running against a real clone rather than a seeded fixture.
+          # Once doctor's own uninitialized fix ships this branch becomes
+          # unreachable-but-harmless; keep it, since the gate must stay correct
+          # against the currently published binary.
+          if grep -q 'not a dark-factory project' <<<"$out"; then
+            echo "pipeline not initialized — nothing to gate"
+            exit 0
+          fi
+
+          # doctor exits non-zero BOTH for findings and for its own failures
+          # (bad config, unreadable tree). Distinguish them, or a crashed doctor
+          # silently passes every PR — a gate that never fires is
+          # indistinguishable from a clean fleet.
+          if ! grep -qE 'doctor found [0-9]+ finding' <<<"$out"; then
+            echo "::error::dark-factory doctor failed to run (exit $rc). This is a broken check, not a clean repo."
+            exit 1
+          fi
+
+          # Category lines are printed at column 0; findings are indented.
+          if grep -qE "^(${BLOCKING_CATEGORIES})$" <<<"$out"; then
+            # Point at `--fix` (which has real fixer implementations), NOT at the
+            # FixCommand strings printed beside each finding: doctor currently
+            # advertises at least two commands that do not exist — `dark-factory
+            # prompt unlink` (orphan_prompt_link.go) and `dark-factory spec
+            # renumber` (duplicate_spec_numbers.go). Copy-pasting those returns
+            # "unknown subcommand", which reads as a broken toolchain rather than
+            # a stale hint.
+            # Wording matters here. A gap in completed/ numbering does NOT imply
+            # unfinished work: vault-cli's 186/187 gap was cleared 2026-09-15 by
+            # PR #172 (branch `fix/reconcile-186-187-bookkeeping`) — both prompts'
+            # work had shipped on 2026-08-21; 186 read `failed` only because its
+            # completion REPORT failed validation afterwards. The gap still had to
+            # be blocked (it silently blocks every spec-less prompt forever), but
+            # the remedy was reconciliation, not a rerun. Saying "unfinished work"
+            # sends the reader to redo work that is already done.
+            echo "::error::Merge blocked: this branch would leave unresolved dark-factory pipeline state on master. This does NOT necessarily mean work is unfinished — a gap in completed/ numbering is often bookkeeping drift from a failed completion report. Run 'dark-factory doctor' locally to see the findings, reconcile or rerun as appropriate ('dark-factory doctor --fix' applies the automatic ones), then re-push."
+            exit 1
+          fi
+          echo "findings present, but none in a blocking category — merge allowed"
