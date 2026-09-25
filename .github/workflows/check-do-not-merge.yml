@@ -11,7 +11,11 @@ jobs:
         env:
           PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
         run: |
-          if echo "$PR_LABELS" | grep -q '"name":"do-not-merge"'; then
+          # Parse with jq, not grep. toJson pretty-prints the payload as
+          # `"name": "do-not-merge"` (space after the colon), so the previous
+          # pattern '"name":"do-not-merge"' never matched and this gate passed
+          # with the label applied — a required check that always reported green.
+          if echo "$PR_LABELS" | jq -e 'any(.[]; .name == "do-not-merge")' >/dev/null; then
             echo "::error::Merge blocked by the do-not-merge label"
             exit 1
           fi
