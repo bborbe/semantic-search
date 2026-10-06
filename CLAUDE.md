@@ -84,7 +84,7 @@ Skip the scenario gate only if `git diff $INSTALLED..HEAD --name-only` matches n
 - Never number filenames -- dark-factory assigns numbers on approve
 - Never manually edit frontmatter status -- use CLI commands above
 - Always audit before approving (`/dark-factory:audit-prompt`, `/dark-factory:audit-spec`)
-- Run `dark-factory prompt approve` / `dark-factory spec approve` yourself once the prompt/spec passed its auditor (global rule execution-phase-no-reask)
+- Run `dark-factory prompt approve` / `dark-factory spec approve` yourself once the prompt/spec passed its auditor, and the daemon under the daemon-hygiene rule (`dark-factory status` first; background; log outside the repo; kill when idle). Global rule: `execution-phase-no-reask`.
 - **Before starting daemon** -- run `dark-factory status` first to check if one is already running.
 - **Start daemon in background** -- use Bash tool with `run_in_background: true` (not foreground, not detached with `&`)
 
