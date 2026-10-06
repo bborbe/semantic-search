@@ -8,6 +8,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 * MINOR version when you add functionality in a backwards-compatible manner, and
 * PATCH version when you make backwards-compatible bug fixes.
 
+## Unreleased
+
+- docs: Remove the dark-factory approval gate from this repo's `CLAUDE.md`. It contradicted the global `execution-phase-no-reask` carve-out and would have stopped every spec and prompt approval.
+
 ## v0.23.1
 
 - docs: re-anchor the acceptance oracle in `docs/design/per-vault-scoping.md` to the two-axis equivalence test that actually shipped — a dedicated server over the full scope map must reproduce the deployed server byte-for-byte on paths **and** scores, and a dedicated index over the scope's own roots must match on paths and ordering. Records why the frozen fixture is no longer the oracle (it was never stable — the five originals reproduce only 57/70 of their own recording — and a live `VaultWatcher` moves the corpus under it), why score equality cannot be asserted against a single-scope index (the process index is built over the union of all declared scope roots, so the same document embedded into an index of a different size returns 1–2 float32 ULPs apart), and the measured result: 70/70 byte-identical on axis 1, 70/70 identical on paths and ordering on axis 2.
