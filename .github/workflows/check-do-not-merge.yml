@@ -16,7 +16,7 @@ jobs:
           # pattern '"name":"do-not-merge"' never matched and this gate passed
           # with the label applied — a required check that always reported green.
           if echo "$PR_LABELS" | jq -e 'any(.[]; .name == "do-not-merge")' >/dev/null; then
-            echo "::error::Merge blocked by the do-not-merge label"
+            echo "::error::Merge blocked by the do-not-merge label — blocks everyone except actors holding the Admin repository role and the Integration 3907226"
             exit 1
           fi
           echo "No do-not-merge label — merge allowed"
